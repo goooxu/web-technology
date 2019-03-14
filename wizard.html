@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>Wizard Demo</title>
+    <meta charset="utf-8" />
+    <script src="https://unpkg.com/react@latest/umd/react.development.js" crossorigin="anonymous"></script>
+    <script src="https://unpkg.com/react-dom@latest/umd/react-dom.development.js" crossorigin="anonymous"></script>
+    <script src="https://unpkg.com/@material-ui/core/umd/material-ui.development.js" crossorigin="anonymous"></script>
+    <script src="https://unpkg.com/babel-standalone@latest/babel.js" crossorigin="anonymous"></script>
+</head>
+
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+        const {
+            AppBar,
+            Button,
+            IconButton,
+            Toolbar,
+            Typography,
+            SvgIcon,
+            withStyles
+        } = window['material-ui'];
+
+        const styles = {
+            root: {
+                flexGrow: 1,
+            },
+            grow: {
+                flexGrow: 1,
+            },
+            menuButton: {
+                marginLeft: -12,
+                marginRight: 20,
+            },
+        };
+
+        function ButtonAppBar(props) {
+            const { classes } = props;
+            return (
+                <div className={classes.root}>
+                    <AppBar>
+                        <Toolbar>
+                            <IconButton className={classes.menuButton} color="inherit" aria-label="Menu">
+                                <SvgIcon>
+                                    <path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/>
+                                </SvgIcon>
+                            </IconButton>
+                            <Typography variant="h6" color="inherit" className={classes.grow}>
+                                News
+                            </Typography>
+                            <Button color="inherit">Login</Button>
+                        </Toolbar>
+                    </AppBar>
+                </div>
+            );
+        }
+
+        const App = withStyles(styles)(ButtonAppBar);
+        ReactDOM.render(<App />, document.querySelector('#root'));
+    </script>
+</body>
+
+</html>
