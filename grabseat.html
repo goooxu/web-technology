@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>Grab Seat Problem Simulator</title>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="https://unpkg.com/bootstrap/dist/css/bootstrap.min.css">
+    <style type="text/css">
+        .hidden {
+            display: none
+        }
+    </style>
+</head>
+
+<body>
+    Rounds: <div id="rounds"></div>
+    <br>
+    Win ratios:
+    <div id="tables">
+        <table class="table">
+            <thead class="thead-dark">
+                <tr id="wr_header"></tr>
+            </thead>
+            <tbody>
+                <tr id="wr_body"></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <script src="grabseat.js"></script>
+</body>
+
+</html>
