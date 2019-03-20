@@ -9,26 +9,89 @@
     <script src="https://unpkg.com/react-dom/umd/react-dom.development.js" crossorigin="anonymous"></script>
     <script src="https://unpkg.com/babel-standalone/babel.js" crossorigin="anonymous"></script>
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <link rel="icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAQAAABIkb+zAAABBklEQVR4Ae3bAQYCQRSH8QdZWAABFQywid67WkEXSEeoQ9QR6gSpmyQlUNMRovY/K77vAbD2ZwbWzhh9F9F44HM/xCXyj3Pxg88nfStZU8fOX5HbG7/5InpWplT5ObJgjqmyEvkmsmZ8U+L1kz9lgKcnUxfLyMJZ6lfgpAT4Wb8CD+kK3PWArJ3/AgAAAAAAgO6fBwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA+NENAIAsAAAAXKWAK0ePPwJWUsDK1E1HyuP3MTR9vtZfgFBfQTlp9n+qrExN7duWLwG9fNvUVrIYxqyda1ixj5l+7xMREUk+cAAAANBhAAAQ0Rtd3Bwrm93TPgAAAABJRU5ErkJggg==">
+    <link rel="icon"
+        href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAQAAABIkb+zAAABBklEQVR4Ae3bAQYCQRSH8QdZWAABFQywid67WkEXSEeoQ9QR6gSpmyQlUNMRovY/K77vAbD2ZwbWzhh9F9F44HM/xCXyj3Pxg88nfStZU8fOX5HbG7/5InpWplT5ObJgjqmyEvkmsmZ8U+L1kz9lgKcnUxfLyMJZ6lfgpAT4Wb8CD+kK3PWArJ3/AgAAAAAAgO6fBwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA+NENAIAsAAAAXKWAK0ePPwJWUsDK1E1HyuP3MTR9vtZfgFBfQTlp9n+qrExN7duWLwG9fNvUVrIYxqyda1ixj5l+7xMREUk+cAAAANBhAAAQ0Rtd3Bwrm93TPgAAAABJRU5ErkJggg==">
     <style>
-        .main {
+        .page {
             background-color: powderblue;
             display: flex;
             flex-direction: column;
-            align-items: center;
-            max-height: 90vh;
+            height: 90vh;
+            padding: 2vh 2vh;
         }
 
-        .main>div {
-            background-color: paleturquoise;
+        .toolbar {
             display: flex;
-            flex-direction: column;
+            justify-content: space-between;
             align-items: center;
         }
+
+        .center {
+            align-self: center;
+        }
+
+        .fill {
+            flex: 1;
+        }
+
+        .hidden {
+            display: none;
+        }
+
 
         dl {
             overflow-y: auto;
-            flex: 1;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 34px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: #ccc;
+            transition: .4s;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+        }
+
+        input:checked+.slider {
+            background-color: #2196f3;
+        }
+
+        input:checked+.slider:before {
+            transform: translateX(26px);
+        }
+
+        .slider.round {
+            border-radius: 34px;
+        }
+
+        .slider.round:before {
+            border-radius: 50%;
         }
     </style>
 </head>
