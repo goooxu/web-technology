@@ -39,14 +39,17 @@ class UserTermPage extends React.Component {
             <div className="page">
                 <i className="material-icons center">comment</i>
                 <h4 className="center">Terms of use</h4>
-                <h5>End User License Agreement</h5>
-                <p>Please read the End User License Agreement carefully before using your Huawei device. Using any Huawei device indicates you acknowledge and agree to the terms and conditions of this Agreement. If you recently purchased a Huawei product and do not agree to the terms and conditions of this Agreement, you may return your Huawei device to an offical Huawei retailer or authorized reseller for a refund, provided that you abide by the terms of Huawei's returns policy.</p>
-                <a href="#">DETAILS</a>
-                <h5>Basic service statement</h5>
-                <p>EMUI provides you with a number of basic services that help ensure that your device works as it should. These services may need to connect to the Internet, and may require the storage and Phone permissions. Touch Details to learn more.</p>
-                <a href="#">DETAILS</a>
-                <div className="fill" />
-                <label><input type="checkbox" checked={this.state.checked} onChange={this.handleCheckboxChange}></input>I have carefully read and agree to the above terms</label>
+                <div className="fill">
+                    <h5>End User License Agreement</h5>
+                    <p>Please read the End User License Agreement carefully before using your Huawei device. Using any Huawei device indicates you acknowledge and agree to the terms and conditions of this Agreement. If you recently purchased a Huawei product and do not agree to the terms and conditions of this Agreement, you may return your Huawei device to an offical Huawei retailer or authorized reseller for a refund, provided that you abide by the terms of Huawei's returns policy.</p>
+                    <a href="#">DETAILS</a>
+                    <h5>Basic service statement</h5>
+                    <p>EMUI provides you with a number of basic services that help ensure that your device works as it should. These services may need to connect to the Internet, and may require the storage and Phone permissions. Touch Details to learn more.</p>
+                    <a href="#">DETAILS</a>
+                    <div>
+                        <label><input type="checkbox" checked={this.state.checked} onChange={this.handleCheckboxChange}></input>I have carefully read and agree to the above terms</label>
+                    </div>
+                </div>
                 <div className="toolbar">
                     <input type="submit" id="usertermback" value="< BACK"></input>
                     <input type="submit" id="usertermnext" value="NEXT >" disabled={!this.state.checked}></input>
@@ -68,12 +71,11 @@ class DataImportPage extends React.Component {
                 <i className="material-icons center">file_copy</i>
                 <h4 className="center">Data Import</h4>
                 <p>You can import your data to this device from any of the following:</p>
-                <dl className="center">
+                <dl className="center fill">
                     <dt><i className="material-icons">android</i>Android device</dt>
                     <dt><i className="material-icons">cast</i>iPhone or iPad</dt>
                     <dt><i className="material-icons">backup</i>Google cloud backup</dt>
                 </dl>
-                <div className="fill" />
                 <div className="toolbar">
                     <input type="submit" id="dataimportback" value="< BACK"></input>
                     <input type="submit" id="dataimportnext" value="NEXT >"></input>
@@ -108,14 +110,15 @@ class ConnectToNetworkPage extends React.Component {
                         <span className="slider round"></span>
                     </label>
                 </div>
-                <hr />
-                <h5>AVAILABLE NETWORKS</h5>
-                <div className={this.state.checked ? 'toolbar' : 'toolbar hidden'}>
-                    <span>My Network</span>
-                    <i className="material-icons">wifi</i>
+                <hr></hr>
+                <div className="fill">
+                    <h5>AVAILABLE NETWORKS</h5>
+                    <div className={this.state.checked ? 'toolbar' : 'toolbar hidden'}>
+                        <span>My Network</span>
+                        <i className="material-icons">wifi</i>
+                    </div>
+                    <a href="#">Add network</a>
                 </div>
-                <a href="#">Add network</a>
-                <div className="fill" />
                 <div className="toolbar">
                     <input type="submit" id="connecttonetworkback" value="< BACK"></input>
                     <input type="submit" id="connecttonetworkskip" value="SKIP"></input>
