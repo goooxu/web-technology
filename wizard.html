@@ -23,7 +23,21 @@
         .toolbar {
             display: flex;
             justify-content: space-between;
-            align-items: center;
+        }
+
+        .toolbar-left {
+            display: flex;
+            justify-content: flex-start;
+        }
+
+        .toolbar-right {
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .htoolbar {
+            display: flex;
+            flex-direction: column;
         }
 
         .center {
@@ -32,7 +46,7 @@
 
         .fill {
             flex: 1;
-            overflow-y: auto;
+            overflow: auto;
         }
 
         .hidden {
@@ -44,11 +58,24 @@
             margin-right: 0;
         }
 
+        i {
+            min-width: 32px;
+        }
+
+        h5 {
+            margin-top: 0;
+        }
+
+        .thick {
+            font-weight: bold;
+        }
+
         .switch {
             position: relative;
             display: inline-block;
             width: 60px;
-            height: 34px;
+            min-width: 60px;
+            height: 24px;
         }
 
         .switch input {
@@ -71,8 +98,8 @@
         .slider:before {
             position: absolute;
             content: "";
-            height: 26px;
-            width: 26px;
+            height: 16px;
+            width: 16px;
             left: 4px;
             bottom: 4px;
             background-color: white;
