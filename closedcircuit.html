@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>Closed circuit</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="minimum-scale=1, initial-scale=1, width=device-width, shrink-to-fit=no">
+    <script src="https://unpkg.com/react/umd/react.development.js" crossorigin="anonymous"></script>
+    <script src="https://unpkg.com/react-dom/umd/react-dom.development.js" crossorigin="anonymous"></script>
+    <script src="https://unpkg.com/babel-standalone/babel.js" crossorigin="anonymous"></script>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link rel="icon"
+        href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAQAAABIkb+zAAABBklEQVR4Ae3bAQYCQRSH8QdZWAABFQywid67WkEXSEeoQ9QR6gSpmyQlUNMRovY/K77vAbD2ZwbWzhh9F9F44HM/xCXyj3Pxg88nfStZU8fOX5HbG7/5InpWplT5ObJgjqmyEvkmsmZ8U+L1kz9lgKcnUxfLyMJZ6lfgpAT4Wb8CD+kK3PWArJ3/AgAAAAAAgO6fBwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA+NENAIAsAAAAXKWAK0ePPwJWUsDK1E1HyuP3MTR9vtZfgFBfQTlp9n+qrExN7duWLwG9fNvUVrIYxqyda1ixj5l+7xMREUk+cAAAANBhAAAQ0Rtd3Bwrm93TPgAAAABJRU5ErkJggg==">
+
+    <style>
+        .board {
+            display: flex;
+            flex-wrap: wrap;
+            width: 640px;
+            height: 640px;
+            margin: 0 auto;
+        }
+
+        .grid {
+            width: 40px;
+            height: 40px;
+            background-color: yellowgreen;
+        }
+
+        .grid-hover {
+            outline: dashed 2px red;
+            outline-offset: -2px;
+        }
+
+        .grid-available {
+            background-color: gold;
+        }
+
+        .grid-occupied {
+            background-color: green;
+        }
+
+        .grid-candidate {
+            background-color: skyblue;
+        }
+
+        .candidates {
+            display: flex;
+            justify-content: space-evenly;
+            margin: 0 auto;
+        }
+
+        svg {
+            width: 100%;
+            height: 100%;
+        }
+
+        h1 {
+            text-align: center;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="root"></div>
+    <script type="text/babel" src="closedcircuit.jsx"></script>
+</body>
+
+</html>
