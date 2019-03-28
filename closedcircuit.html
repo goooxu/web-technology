@@ -2,7 +2,7 @@
 <html lang="en">
 
 <head>
-    <title>Closed circuit</title>
+    <title>闭合回路挑战</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="minimum-scale=1, initial-scale=1, width=device-width, shrink-to-fit=no">
     <script src="https://unpkg.com/react/umd/react.development.js" crossorigin="anonymous"></script>
@@ -25,7 +25,7 @@
         .grid {
             width: 40px;
             height: 40px;
-            background-color: yellowgreen;
+            background-color: navajowhite;
         }
 
         .grid-hover {
@@ -44,7 +44,7 @@
         }
 
         .grid-available {
-            background-color: gold;
+            background-color: yellowgreen;
         }
 
         .grid-occupied {
@@ -109,8 +109,22 @@
             background-color: lightcoral;
         }
 
+        @keyframes defeat {
+            from {
+                background-color: transparent;
+            }
+
+            to {
+                background-color: gold;
+            }
+        }
+
         .score-defeat {
-            background-color: gold;
+            animation-duration: 0.5s;
+            animation-name: defeat;
+            animation-iteration-count: infinite;
+            animation-direction: alternate;
+
         }
 
         .messageboard {
@@ -135,9 +149,22 @@
             height: 80px;
         }
 
+        .legend {
+            display: inline-flex;
+        }
+
+        .legend>div {
+            margin: 5px;
+        }
+
         svg {
             width: 100%;
             height: 100%;
+        }
+
+        p,
+        ul {
+            margin: 0px;
         }
 
         .center {

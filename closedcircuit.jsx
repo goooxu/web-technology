@@ -230,16 +230,17 @@ class Game extends React.Component {
         };
         if (props.role === GameRoles.Winner) {
             this.state.messages.push(
-                <span>Created the room <b>{props.roomKey}</b>, you are the Winner</span>,
-                <span>Waiting for the Challenger joining</span>
+                <span>已创建房间（代码 <b>{props.roomKey}</b>），请将代码发送给您的朋友，他们便可以加入这个房间挑战你</span>,
+                <span>你是<b>擂主</b></span>,
+                <span>等待挑战者加入房间</span>
             );
         } else if (props.role === GameRoles.Challenger) {
             this.state.messages.push(
-                <span>Joined the room <b>{props.roomKey}</b>, you are the Challenger</span>
+                <span>已进入房间（代码 <b>{props.roomKey}</b>），你是挑战者</span>
             );
         } else if (props.role === GameRoles.Audience) {
             this.state.messages.push(
-                <span>Joined the room <b>{props.roomKey}</b>, you are an audience</span>
+                <span>已进入房间（代码 <b>{props.roomKey}</b>），你是观众</span>
             );
         }
         this.dropStart = this.dropStart.bind(this);
@@ -302,6 +303,12 @@ class Game extends React.Component {
                     if (this.props.role === GameRoles.Winner) {
                         if (this.checkForLoop(item.index)) {
                             this.sendGameActions([{ action: 'endGame', victor: item.role }]);
+                        } else if (state.remainingPieces === 0) {
+                            if (item.role === GameRoles.Winner) {
+                                this.sendGameActions([{ action: 'endGame', victor: GameRoles.Challenger }]);
+                            } else {
+                                this.sendGameActions([{ action: 'endGame', victor: GameRoles.Winner }]);
+                            }
                         }
                     }
                 } else if (item.action === 'endTurn') {
@@ -314,17 +321,17 @@ class Game extends React.Component {
                 } else if (item.action === 'declareNoSolution') {
                     if (item.role === GameRoles.Winner) {
                         state.gameState = GameStates.ChallengerChecking;
-                        state.messages.push(<span>The Winner declared no solution, the Challenger need to overthrow it or admit defeat.</span>);
+                        state.messages.push(<span>擂主宣称无解，挑战者需要推翻这个结论或者认输</span>);
                     } else if (item.role === GameRoles.Challenger) {
                         state.gameState = GameStates.WinnerChecking;
-                        state.messages.push(<span>The Challenger declared no solution, the Winner need to overthrow it or admit defeat.</span>);
+                        state.messages.push(<span>挑战者宣称无解，擂主需要推翻这个结论或者认输</span>);
                     }
                     state.remainingPiecesInThisTurn = state.remainingPieces;
                 } else if (item.action === 'admitDefeat') {
                     if (item.role === GameRoles.Winner) {
-                        state.messages.push(<span>The Winner admitted defeat</span>);
+                        state.messages.push(<span>擂主认输</span>);
                     } else if (item.role === GameRoles.Challenger) {
-                        state.messages.push(<span>The Challenger admitted defeat</span>);
+                        state.messages.push(<span>挑战者认输</span>);
                     }
                     if (this.props.role === GameRoles.Winner) {
                         if (item.role === GameRoles.Winner) {
@@ -335,14 +342,14 @@ class Game extends React.Component {
                     }
                 } else if (item.action === 'startGame') {
                     state.gameState = GameStates.WinnerTurn;
-                    state.messages.push(<span>The Challenger is joined, game started, the Winner go first</span>);
+                    state.messages.push(<span>挑战者已经进入房间，游戏开始，由擂主先走</span>);
                 } else if (item.action === 'endGame') {
                     if (item.victor === GameRoles.Winner) {
                         state.gameState = GameStates.WinnerDefeat;
-                        state.messages.push(<span><b>The game has ended, the Winner is the victor</b></span>);
+                        state.messages.push(<span><b>游戏结束，擂主获胜</b></span>);
                     } else if (item.victor === GameRoles.Challenger) {
                         state.gameState = GameStates.ChallengerDefeat;
-                        state.messages.push(<span><b>The game has ended, the Challenger is the victor</b></span>);
+                        state.messages.push(<span><b>游戏结束，挑战者获胜</b></span>);
                     }
                 }
             }
@@ -596,29 +603,29 @@ class Game extends React.Component {
             </div>
             <hr></hr>
             <div className={`dashboard ${this.isOwnActive() ? '' : ' disable'}`}>
-                <span>Remaining <b>{this.state.remainingPieces}</b> pieces in total</span>
+                <span>总计剩余 <b>{this.state.remainingPieces}</b> 枚棋子</span>
                 <div className="candidates">
                     {Object.values(PieceTypes).filter(i => i !== PieceTypes.None).map(i =>
                         <CandidateGrid key={i} pieceType={i} dropStart={this.dropStart} dropEnd={this.dropEnd} />
                     )}
                 </div>
-                <span>Remaining <b>{this.state.remainingPiecesInThisTurn}</b> pieces in this turn</span>
+                <span>此回合剩余 <b>{this.state.remainingPiecesInThisTurn}</b> 枚棋子</span>
                 <div className="toolbar">
-                    {(this.state.gameState === GameStates.WinnerTurn || this.state.gameState === GameStates.ChallengerTurn) && <button onClick={this.handleEndTurnClick}>End turn</button>}
-                    {(this.state.gameState === GameStates.WinnerTurn || this.state.gameState === GameStates.ChallengerTurn) && <button onClick={this.handleDeclareNoSolutionClick}>Declare no solution</button>}
-                    {(this.state.gameState === GameStates.WinnerChecking || this.state.gameState === GameStates.ChallengerChecking) && <button onClick={this.handleAdmitDefeatClick}>Admit defeat</button>}
+                    {(this.state.gameState === GameStates.WinnerTurn || this.state.gameState === GameStates.ChallengerTurn) && <button onClick={this.handleEndTurnClick}>结束回合</button>}
+                    {(this.state.gameState === GameStates.WinnerTurn || this.state.gameState === GameStates.ChallengerTurn) && <button onClick={this.handleDeclareNoSolutionClick}>宣称无解</button>}
+                    {(this.state.gameState === GameStates.WinnerChecking || this.state.gameState === GameStates.ChallengerChecking) && <button onClick={this.handleAdmitDefeatClick}>认输</button>}
                 </div>
             </div>
             <hr></hr>
             <div className="scoreboard">
                 <div className={`score ${this.state.gameState === GameStates.WinnerDefeat ? 'score-defeat' : this.isWinnerActive() && (this.isOwnActive() ? 'score-own-active' : 'score-opponent-active')}`}>
-                    <h2>The Winner</h2>
-                    <span>{this.props.role === GameRoles.Winner ? 'You' : 'Your opponent'}</span>
+                    <h2>擂主</h2>
+                    <span>{this.props.role === GameRoles.Winner ? '你' : '你的对手'}</span>
                 </div>
                 <h2>vs</h2>
                 <div className={`score ${this.state.gameState === GameStates.ChallengerDefeat ? 'score-defeat' : this.isChallengerActive() && (this.isOwnActive() ? 'score-own-active' : 'score-opponent-active')}`}>
-                    <h2>The Challenger</h2>
-                    <span>{this.props.role === GameRoles.Challenger ? 'You' : 'Your opponent'}</span>
+                    <h2>挑战者</h2>
+                    <span>{this.props.role === GameRoles.Challenger ? '你' : '你的对手'}</span>
                 </div>
             </div>
             <hr></hr>
@@ -655,12 +662,31 @@ class Menu extends React.Component {
     render() {
         return <div className="menu">
             <div className="menu">
-                <button onClick={this.handleCreateGame}>Create a game</button>
+                <button onClick={this.handleCreateGame}>创建一局游戏</button>
             </div>
-            <div>OR</div>
+            <div>或者</div>
             <div className="menu">
-                <div><span>Room Key: </span><input value={this.state.roomKey} onChange={this.handleRoomKeyChange}></input></div>
-                <button onClick={this.handleJoinGame} className={this.state.roomKey ? '' : 'disable'}>Join a game</button>
+                <div><span>房间代码：</span><input value={this.state.roomKey} onChange={this.handleRoomKeyChange}></input></div>
+                <button onClick={this.handleJoinGame} className={this.state.roomKey ? '' : 'disable'}>加入一局游戏</button>
+            </div>
+            <div>
+                <h3 className="center">游戏规则</h3>
+                <p>本游戏思路来源于《最强大脑》第六季第六期所用小游戏，游戏规则如下：</p>
+                <div>有一个16x16的棋盘和6种棋子<div className="legend">{Object.values(PieceTypes).filter(i => i !== PieceTypes.None).map(i =>
+                    <CandidateGrid key={i} pieceType={i} dropStart={this.dropStart} dropEnd={this.dropEnd} />
+                )}</div></div>
+                <p>每种棋子不限数目，但总数不超过48枚</p>
+                <p>每局游戏的双方分别为<b>擂主</b>和<b>挑战者</b>，由<b>擂主</b>先行，双方交替进行回合</p>
+                <p>一方在回合内可以</p>
+                <ul>
+                    <li>在同一行（列）相邻位置落下最多3枚棋子，如果成功组成一个局部的闭合回路则立即获胜</li>
+                    <li>认为使用全部剩余棋子也无法组合闭合回路，可以“宣称无解”</li>
+                </ul>
+                <p>在一方“宣称无解”后，则进入对方回合，另一方可以有两种选择：</p>
+                <ul>
+                    <li>认输，则对方获胜</li>
+                    <li>尝试使用全部剩余棋子来组成一个闭合回路，如果尝试成功则获胜，否则对方获胜</li>
+                </ul>
             </div>
         </div>;
     }
@@ -695,7 +721,7 @@ class App extends React.Component {
 
     render() {
         return <React.Fragment>
-            <h1 className="center">Closed Circuit</h1>
+            <h1 className="center">闭合回路挑战</h1>
             {this.state.setting ? <Menu createGame={this.createGame} joinGame={this.joinGame} /> : <Game role={this.state.role} roomKey={this.state.roomKey} identity={uniqueIdentity(8)} />}
             <hr></hr>
             <p className="center">Powered by GitHub Pages, React, Azure Functions, SignalR Service</p>
