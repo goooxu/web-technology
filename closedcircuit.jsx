@@ -292,7 +292,7 @@ class Game extends React.Component {
             remainingPiecesInThisTurn: 3,
             droppingPieceType: PieceTypes.None,
             drop_history: [],
-            messages: [],
+            messages: [<span><a href="https://github.com/goooxu/web-technology/issues/1" target="_blank">游戏规则</a></span>],
         };
         this.action_history = [];
         if (props.owner) {
