@@ -99,6 +99,7 @@
             flex-direction: column;
             align-items: center;
             margin: 10px;
+            padding: 10px;
         }
 
         .score-own-active {
@@ -109,7 +110,7 @@
             background-color: lightcoral;
         }
 
-        @keyframes defeat {
+        @keyframes defeat-keyframes {
             from {
                 background-color: transparent;
             }
@@ -121,16 +122,16 @@
 
         .score-defeat {
             animation-duration: 0.5s;
-            animation-name: defeat;
+            animation-name: defeat-keyframes;
             animation-iteration-count: infinite;
             animation-direction: alternate;
-
         }
 
         .messageboard {
             display: flex;
             flex-direction: column;
             margin: 0 auto;
+            padding: 5px;
             background-color: mintcream;
         }
 
@@ -140,21 +141,14 @@
             align-items: center;
         }
 
-        .menu>div {
+        .menu>p,
+        .menu>button {
             margin: 10px;
         }
 
         .menu>button {
             width: 260px;
             height: 80px;
-        }
-
-        .legend {
-            display: inline-flex;
-        }
-
-        .legend>div {
-            margin: 5px;
         }
 
         svg {
@@ -167,12 +161,17 @@
             margin: 0px;
         }
 
+        h1,
+        h2 {
+            margin: 5px auto;
+        }
+
         .center {
             text-align: center;
         }
 
         .disable {
-            filter: blur(2px);
+            filter: blur(1px) grayscale(100%);
             pointer-events: none;
         }
     </style>
