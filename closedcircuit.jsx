@@ -41,6 +41,13 @@ const GameRoles = Object.freeze({
     Audience: 3
 });
 
+const AppStates = Object.freeze({
+    Connecting: 0,
+    ConnectFailed: 1,
+    Setting: 2,
+    Gaming: 3
+});
+
 const ApiBaseUrl = 'https://closedcircuit.azurewebsites.net/api';
 
 function toChar(index) {
@@ -216,6 +223,64 @@ class Piece {
     }
 }
 
+class Connection {
+    constructor(baseUrl) {
+        this.listeners = [[], [], [], []];
+        this.types = ['connect', 'disconnect', 'message', 'error'];
+
+        this.connection = new signalR.HubConnectionBuilder()
+            .withUrl(baseUrl)
+            .configureLogging(signalR.LogLevel.Information)
+            .build();
+        this.connection.on('message', message => {
+            for (const listener of this.listeners[2]) {
+                listener(message);
+            }
+        });
+        this.connection.onclose(() => {
+            console.log('Server disconnected');
+            for (const listener of this.listeners[1]) {
+                listener();
+            }
+        });
+    }
+
+    start() {
+        this.connection.start().then(() => {
+            console.log('Server connected');
+            for (const listener of this.listeners[0]) {
+                listener();
+            }
+        }).catch(e => {
+            for (const listener of this.listeners[3]) {
+                listener(e);
+            }
+        });
+        console.log('Server connecting...');
+    }
+
+    on(type, listener) {
+        const typeId = this.types.indexOf(type);
+        if (typeId === -1) {
+            return;
+        }
+        this.listeners[typeId].push(listener);
+    }
+
+    off(type, listener) {
+        const typeId = this.types.indexOf(type);
+        if (typeId === -1) {
+            return;
+        }
+        const index = this.listeners[typeId].indexOf(listener);
+        if (index == -1) {
+            return;
+        }
+
+        this.listeners[typeId].splice(index, 1);
+    }
+}
+
 class Game extends React.Component {
     constructor(props) {
         super(props);
@@ -246,7 +311,6 @@ class Game extends React.Component {
         this.dropEnd = this.dropEnd.bind(this);
         this.getOccupiedGridState = this.getOccupiedGridState.bind(this);
         this.getAvailableGridState = this.getAvailableGridState.bind(this);
-        this.onConnected = this.onConnected.bind(this);
         this.onReceiveMessage = this.onReceiveMessage.bind(this);
         this.handleEndTurnClick = this.handleEndTurnClick.bind(this);
         this.handleDeclareNoSolutionClick = this.handleDeclareNoSolutionClick.bind(this);
@@ -254,22 +318,14 @@ class Game extends React.Component {
     }
 
     componentDidMount() {
-        const connection = new signalR.HubConnectionBuilder()
-            .withUrl(ApiBaseUrl)
-            .configureLogging(signalR.LogLevel.Information)
-            .build();
-        connection.on('message', this.onReceiveMessage);
-        connection.onclose(() => console.log('Server disconnected'));
-
-        console.log('Server connecting...');
-        connection.start().then(this.onConnected).catch(console.error);
-    }
-
-    onConnected() {
-        console.log('Server connected');
+        this.props.connection.on('message', this.onReceiveMessage);
         if (!this.props.owner) {
             this.sendMessage('join');
         }
+    }
+
+    componentWillUnmount() {
+        this.props.connection.off('message', this.onReceiveMessage);
     }
 
     onReceiveMessage(message) {
@@ -320,7 +376,9 @@ class Game extends React.Component {
                     } else if (item.role === GameRoles.Challenger) {
                         state.gameState = GameStates.WinnerTurn;
                     }
-                    state.remainingPiecesInThisTurn = Math.min(3, state.remainingPieces);
+                    if (this.isOwnActive()) {
+                        state.remainingPiecesInThisTurn = Math.min(3, state.remainingPieces);
+                    }
                 } else if (item.action === 'declareNoSolution') {
                     if (item.role === GameRoles.Winner) {
                         state.gameState = GameStates.ChallengerChecking;
@@ -329,7 +387,9 @@ class Game extends React.Component {
                         state.gameState = GameStates.WinnerChecking;
                         state.messages.push(<span>挑战者宣称无解，擂主需要推翻这个结论或者认输</span>);
                     }
-                    state.remainingPiecesInThisTurn = state.remainingPieces;
+                    if (this.isOwnActive()) {
+                        state.remainingPiecesInThisTurn = state.remainingPieces;
+                    }
                 } else if (item.action === 'admitDefeat') {
                     if (item.role === GameRoles.Winner) {
                         state.messages.push(<span>擂主认输</span>);
@@ -354,6 +414,7 @@ class Game extends React.Component {
                         state.gameState = GameStates.ChallengerDefeat;
                         state.messages.push(<span><b>游戏结束，挑战者获胜</b></span>);
                     }
+                    state.messages.push(<span>请刷新页面重新开始游戏</span>);
                 }
             }
             return state;
@@ -779,17 +840,42 @@ class App extends React.Component {
     constructor(props) {
         super(props);
         this.state = {
-            setting: true,
+            appState: AppStates.Connecting,
             owner: false,
             roomKey: undefined
         };
+        this.onConnectSucceeded = this.onConnectSucceeded.bind(this);
+        this.onConnectFailed = this.onConnectFailed.bind(this);
         this.createGame = this.createGame.bind(this);
         this.joinGame = this.joinGame.bind(this);
     }
 
+    componentDidMount() {
+        this.connection = new Connection(ApiBaseUrl);
+        this.connection.on('connect', this.onConnectSucceeded);
+        this.connection.on('error', this.onConnectFailed);
+        this.connection.start();
+    }
+
+    onConnectSucceeded() {
+        this.setState({
+            appState: AppStates.Setting
+        });
+        this.connection.off('connect', this.onConnectSucceeded);
+        this.connection.off('error', this.onConnectFailed);
+    }
+
+    onConnectFailed() {
+        this.setState({
+            appState: AppStates.ConnectFailed
+        });
+        this.connection.off('connect', this.onConnectSucceeded);
+        this.connection.off('error', this.onConnectFailed);
+    }
+
     createGame() {
         this.setState({
-            setting: false,
+            appState: AppStates.Gaming,
             roomKey: uniqueIdentity(8),
             owner: true
         });
@@ -797,16 +883,33 @@ class App extends React.Component {
 
     joinGame(roomKey) {
         this.setState({
-            setting: false,
+            appState: AppStates.Gaming,
             roomKey,
             owner: false
         });
     }
 
+    getRenderScene() {
+        switch (this.state.appState) {
+            case AppStates.Connecting: {
+                return <p className="center">匿名登录中，请不要手动刷新，请使用Chrome浏览器访问...</p>
+            }
+            case AppStates.ConnectFailed: {
+                return <p className="center">登录失败，请刷新页面重试，请使用Chrome浏览器访问</p>
+            }
+            case AppStates.Setting: {
+                return <Menu createGame={this.createGame} joinGame={this.joinGame} />;
+            }
+            case AppStates.Gaming: {
+                return <Game connection={this.connection} roomKey={this.state.roomKey} owner={this.state.owner} identity={uniqueIdentity(8)} />;
+            }
+        }
+    }
+
     render() {
         return <React.Fragment>
             <h1 className="center">闭合回路挑战</h1>
-            {this.state.setting ? <Menu createGame={this.createGame} joinGame={this.joinGame} /> : <Game roomKey={this.state.roomKey} owner={this.state.owner} identity={uniqueIdentity(8)} />}
+            {this.getRenderScene()}
             <hr></hr>
             <p className="center">Powered by GitHub Pages, React, Azure Functions, SignalR Service</p>
         </React.Fragment>;
