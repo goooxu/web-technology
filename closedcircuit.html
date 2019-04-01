@@ -4,7 +4,7 @@
 <head>
     <title>闭合回路挑战</title>
     <meta charset="utf-8" />
-    <meta name="viewport" content="minimum-scale=1, initial-scale=1, width=device-width, shrink-to-fit=no">
+    <meta name="viewport" content="initial-scale=1, width=device-width, shrink-to-fit=no">
     <script src="https://unpkg.com/react/umd/react.development.js" crossorigin="anonymous"></script>
     <script src="https://unpkg.com/react-dom/umd/react-dom.development.js" crossorigin="anonymous"></script>
     <script src="https://unpkg.com/babel-standalone/babel.js" crossorigin="anonymous"></script>
@@ -26,6 +26,18 @@
             width: 40px;
             height: 40px;
             background-color: navajowhite;
+        }
+
+        @media only screen and (min-device-width: 375px) and (max-device-width: 812px) and (-webkit-min-device-pixel-ratio: 3) and (orientation: portrait) {
+            .board {
+                width: 320px;
+                height: 320px;
+            }
+
+            .grid {
+                width: 20px;
+                height: 20px;
+            }
         }
 
         .grid-hover {

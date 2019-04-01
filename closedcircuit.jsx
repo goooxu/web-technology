@@ -24,18 +24,17 @@ const GridStates = Object.freeze({
 });
 
 const GameStates = Object.freeze({
-    WaitingChallengerJoin: 0,
-    WaitingChallengerAck: 1,
-    WinnerTurn: 2,
-    ChallengerTurn: 3,
-    WinnerChecking: 4,
-    ChallengerChecking: 5,
-    WinnerDefeat: 6,
-    ChallengerDefeat: 7
+    WaitingGameStart: 0,
+    WinnerDropping: 1,
+    ChallengerDropping: 2,
+    WinnerChecking: 3,
+    ChallengerChecking: 4,
+    WinnerDefeat: 5,
+    ChallengerDefeat: 6
 });
 
 const GameRoles = Object.freeze({
-    None: 0,
+    Undetermined: 0,
     Winner: 1,
     Challenger: 2,
     Audience: 3
@@ -273,7 +272,7 @@ class Connection {
             return;
         }
         const index = this.listeners[typeId].indexOf(listener);
-        if (index == -1) {
+        if (index === -1) {
             return;
         }
 
@@ -285,16 +284,18 @@ class Game extends React.Component {
     constructor(props) {
         super(props);
         this.state = {
-            gameRole: GameRoles.None,
-            gameState: GameStates.WaitingChallengerJoin,
             chessPieces: Array(256).fill().map(() => new Piece()),
+            gameRole: GameRoles.Undetermined,
+            gameState: GameStates.WaitingGameStart,
             remainingPieces: 48,
             remainingPiecesInThisTurn: 3,
             droppingPieceType: PieceTypes.None,
-            drop_history: [],
+            pendingNetworkRequests: 0,
+            dropHistory: [],
             messages: [<span><a href="https://github.com/goooxu/web-technology/issues/1" target="_blank">游戏规则</a></span>],
         };
-        this.action_history = [];
+        this.actionHistory = [];
+        this.waitingChallengerJoin = true;
         if (props.owner) {
             this.state.gameRole = GameRoles.Winner;
             this.state.messages.push(
@@ -330,12 +331,12 @@ class Game extends React.Component {
 
     onReceiveMessage(message) {
         if (message.roomKey === this.props.roomKey) {
-            console.log('$', message);
+            //console.log('$', message);
 
             if (message.cmd === 'immediate') {
-                this.onReceiveImmediateGameActions(message.actions);
+                this.onReceiveImmediateGameActions(message.sender, message.actions);
             } else if (message.cmd === 'replay') {
-                this.onReceiveReplayGameActions(message.target, message.actions);
+                this.onReceiveReplayGameActions(message.sender, message.target, message.actions);
             } else if (message.cmd === 'join') {
                 this.onReceiveJoinMessage(message.sender);
             } else if (message.cmd === 'assign') {
@@ -346,21 +347,26 @@ class Game extends React.Component {
         }
     }
 
-    onGameActions(actions) {
+    onGameActions(sender, actions) {
         const outActions = [];
         this.setState(state => {
+            if (sender === this.props.identity) {
+                state.pendingNetworkRequests -= 1;
+            }
             for (const item of actions) {
                 if (item.action === 'drop') {
                     state.remainingPieces -= 1;
+                    state.remainingPiecesInThisTurn -= 1;
                     state.chessPieces[item.index].occupy(item.pieceType);
                     this.increaseSurroundingPieceLinks(state.chessPieces, item.index, item.pieceType);
-                    if (state.drop_history.length > 0 && state.drop_history[state.drop_history.length - 1].role === item.role) {
-                        state.drop_history[state.drop_history.length - 1].indexes.push(item.index);
+                    if (state.dropHistory.length > 0 && state.dropHistory[state.dropHistory.length - 1].role === item.role) {
+                        state.dropHistory[state.dropHistory.length - 1].indexes.push(item.index);
                     } else {
-                        state.drop_history.push({ role: item.role, indexes: [item.index] });
+                        state.dropHistory.push({ role: item.role, indexes: [item.index] });
                     }
                     if (this.props.owner) {
-                        if (this.checkForLoop(item.index)) {
+                        const loopLength = this.checkForLoop(item.index, item.pieceType);
+                        if (loopLength !== 0 && loopLength === 48 - state.remainingPieces) {
                             outActions.push({ action: 'endGame', victor: item.role });
                         } else if (state.remainingPieces === 0) {
                             if (item.role === GameRoles.Winner) {
@@ -372,9 +378,9 @@ class Game extends React.Component {
                     }
                 } else if (item.action === 'endTurn') {
                     if (item.role === GameRoles.Winner) {
-                        state.gameState = GameStates.ChallengerTurn;
+                        state.gameState = GameStates.ChallengerDropping;
                     } else if (item.role === GameRoles.Challenger) {
-                        state.gameState = GameStates.WinnerTurn;
+                        state.gameState = GameStates.WinnerDropping;
                     }
                     if (this.isOwnActive()) {
                         state.remainingPiecesInThisTurn = Math.min(3, state.remainingPieces);
@@ -404,7 +410,7 @@ class Game extends React.Component {
                         }
                     }
                 } else if (item.action === 'startGame') {
-                    state.gameState = GameStates.WinnerTurn;
+                    state.gameState = GameStates.WinnerDropping;
                     state.messages.push(<span>挑战者已经进入房间，游戏开始，由擂主先走</span>);
                 } else if (item.action === 'endGame') {
                     if (item.victor === GameRoles.Winner) {
@@ -417,6 +423,9 @@ class Game extends React.Component {
                     state.messages.push(<span>请刷新页面重新开始游戏</span>);
                 }
             }
+            if (outActions.length !== 0) {
+                state.pendingNetworkRequests += 1;
+            }
             return state;
         }, () => {
             if (outActions.length !== 0) {
@@ -425,34 +434,24 @@ class Game extends React.Component {
         });
     }
 
-    onReceiveImmediateGameActions(actions) {
+    onReceiveImmediateGameActions(sender, actions) {
         if (this.props.owner) {
-            this.action_history.push(...actions);
+            this.actionHistory.push(...actions);
         }
-        this.onGameActions(actions);
+        this.onGameActions(sender, actions);
     }
 
-    onReceiveReplayGameActions(target, actions) {
+    onReceiveReplayGameActions(sender, target, actions) {
         if (target === this.props.identity) {
-            this.onGameActions(actions);
+            this.onGameActions(sender, actions);
         }
     }
 
     onReceiveJoinMessage(sender) {
         if (this.props.owner) {
-            if (this.state.gameState === GameStates.WaitingChallengerJoin) {
-                let success = false;
-                this.setState(state => {
-                    if (state.gameState === GameStates.WaitingChallengerJoin) {
-                        state.gameState = GameStates.WaitingChallengerAck;
-                        success = true;
-                    };
-                    return state;
-                }, () => {
-                    if (success) {
-                        this.sendMessage('assign', { target: sender, role: GameRoles.Challenger });
-                    }
-                });
+            if (this.waitingChallengerJoin) {
+                this.waitingChallengerJoin = false;
+                this.sendMessage('assign', { target: sender, role: GameRoles.Challenger });
             } else {
                 this.sendMessage('assign', { target: sender, role: GameRoles.Audience });
             }
@@ -480,9 +479,12 @@ class Game extends React.Component {
     onReceiveReadyMessage(sender, role) {
         if (this.props.owner) {
             if (role === GameRoles.Challenger) {
-                this.sendGameActions([{ action: 'startGame' }]);
+                this.setState(state => {
+                    state.pendingNetworkRequests += 1;
+                    return state;
+                }, () => this.sendGameActions([{ action: 'startGame' }]));
             } else if (role === GameRoles.Audience) {
-                this.sendMessage('replay', { target: sender, actions: this.action_history });
+                this.sendMessage('replay', { target: sender, actions: this.actionHistory });
             }
         }
     }
@@ -501,34 +503,47 @@ class Game extends React.Component {
         });
     }
 
+    isWinnerTurn() {
+        return this.state.gameState === GameStates.WinnerDropping || this.state.gameState === GameStates.WinnerChecking;
+    }
+
+    isChallengerTurn() {
+        return this.state.gameState === GameStates.ChallengerDropping || this.state.gameState === GameStates.ChallengerChecking;
+    }
+
+    isOwnTurn() {
+        return this.state.gameRole === GameRoles.Winner && this.isWinnerTurn() ||
+            this.state.gameRole === GameRoles.Challenger && this.isChallengerTurn();
+    }
+
     isOwnActive() {
-        return this.state.gameRole === GameRoles.Winner && this.isWinnerActive() ||
-            this.state.gameRole === GameRoles.Challenger && this.isChallengerActive();
-    }
-
-    isWinnerActive() {
-        return this.state.gameState === GameStates.WinnerTurn || this.state.gameState === GameStates.WinnerChecking;
-    }
-
-    isChallengerActive() {
-        return this.state.gameState === GameStates.ChallengerTurn || this.state.gameState === GameStates.ChallengerChecking;
+        return this.state.pendingNetworkRequests === 0 && this.isOwnTurn();
     }
 
     handleEndTurnClick() {
         if (this.isOwnActive()) {
-            this.sendGameActions([{ action: 'endTurn' }]);
+            this.setState(state => {
+                state.pendingNetworkRequests += 1;
+                return state;
+            }, () => this.sendGameActions([{ action: 'endTurn' }]));
         }
     }
 
     handleDeclareNoSolutionClick() {
         if (this.isOwnActive()) {
-            this.sendGameActions([{ action: 'declareNoSolution' }]);
+            this.setState(state => {
+                state.pendingNetworkRequests += 1;
+                return state;
+            }, () => this.sendGameActions([{ action: 'declareNoSolution' }]));
         }
     }
 
     handleAdmitDefeatClick() {
         if (this.isOwnActive()) {
-            this.sendGameActions([{ action: 'admitDefeat' }]);
+            this.setState(state => {
+                state.pendingNetworkRequests += 1;
+                return state;
+            }, () => this.sendGameActions([{ action: 'admitDefeat' }]));
         }
     }
 
@@ -545,17 +560,19 @@ class Game extends React.Component {
                 state => {
                     state.droppingPieceType = PieceTypes.None;
                     if (index !== -1) {
-                        state.remainingPiecesInThisTurn -= 1;
                         outActions.push({
                             action: 'drop',
                             index,
                             pieceType
                         });
-                        if (state.remainingPiecesInThisTurn === 0) {
+                        if (state.remainingPiecesInThisTurn === 1) {
                             outActions.push({
                                 action: 'endTurn'
                             });
                         }
+                    }
+                    if (outActions.length !== 0) {
+                        state.pendingNetworkRequests += 1;
                     }
                     return state;
                 }, () => {
@@ -608,14 +625,12 @@ class Game extends React.Component {
         }
     }
 
-    checkForLoop(index) {
+    checkForLoop(index, pieceType) {
         const startIndex = index;
-        let step = 0;
+        let steps = 0;
         let sourceDirection = 0;
 
-        while (!(step !== 0 && index === startIndex)) {
-            const pieceType = this.state.chessPieces[index].pieceType;
-
+        while (!(steps !== 0 && index === startIndex)) {
             let success = false;
             for (const direction of Object.values(Directions)) {
                 if (direction === sourceDirection) {
@@ -638,19 +653,20 @@ class Game extends React.Component {
                 }
 
                 index = oppositeIndex;
+                pieceType = this.state.chessPieces[index].pieceType;
                 sourceDirection = ((direction + 2) % 4);
-                step++;
+                steps++;
                 success = true;
 
                 break;
             }
 
             if (!success) {
-                return false;
+                return 0;
             }
         }
 
-        return true;
+        return steps;
     }
 
     checkForNeighbor(index, originIndex, distance) {
@@ -662,12 +678,12 @@ class Game extends React.Component {
     }
 
     getOccupiedGridState(index) {
-        for (let i = Math.max(0, this.state.drop_history.length - 2); i < this.state.drop_history.length; i++) {
-            if (this.state.drop_history[i].indexes.includes(index)) {
+        for (let i = Math.max(0, this.state.dropHistory.length - 2); i < this.state.dropHistory.length; i++) {
+            if (this.state.dropHistory[i].indexes.includes(index)) {
                 if (this.state.gameRole === GameRoles.Audience) {
-                    return (this.state.drop_history[i].role === GameRoles.Winner) ? GridStates.OccupiedByOwn : GridStates.OccupiedByOpponent;
+                    return (this.state.dropHistory[i].role === GameRoles.Winner) ? GridStates.OccupiedByOwn : GridStates.OccupiedByOpponent;
                 } else {
-                    return (this.state.drop_history[i].role === this.state.gameRole) ? GridStates.OccupiedByOwn : GridStates.OccupiedByOpponent;
+                    return (this.state.dropHistory[i].role === this.state.gameRole) ? GridStates.OccupiedByOwn : GridStates.OccupiedByOpponent;
                 }
             }
         }
@@ -676,10 +692,10 @@ class Game extends React.Component {
     }
 
     getAvailableGridState(index) {
-        if ((this.state.gameState === GameStates.WinnerTurn || this.state.gameState === GameStates.ChallengerTurn) && this.state.drop_history.length !== 0) {
-            const record = this.state.drop_history[this.state.drop_history.length - 1];
+        if ((this.state.gameState === GameStates.WinnerDropping || this.state.gameState === GameStates.ChallengerDropping) && this.state.dropHistory.length !== 0) {
+            const record = this.state.dropHistory[this.state.dropHistory.length - 1];
             if (record.role === this.state.gameRole && !record.indexes.every(dropIndex =>
-                this.checkForNeighbor(index, dropIndex, this.state.drop_history[this.state.drop_history.length - 1].indexes.length))) {
+                this.checkForNeighbor(index, dropIndex, this.state.dropHistory[this.state.dropHistory.length - 1].indexes.length))) {
                 return GridStates.Blank;
             }
         }
@@ -698,7 +714,7 @@ class Game extends React.Component {
                     if ((this.state.droppingPieceType & mask) !== 0 && (oppositePiece.pieceType & oppositeMask) === 0) {
                         return GridStates.Blank;
                     }
-                } else if (oppositePiece.blank) {
+                } else {
                     if ((this.state.droppingPieceType & mask) !== 0 && oppositePiece.links >= 2) {
                         return GridStates.Blank;
                     }
@@ -706,6 +722,11 @@ class Game extends React.Component {
             } else if ((this.state.droppingPieceType & mask) !== 0) {
                 return GridStates.Blank;
             }
+        }
+
+        const loopLength = this.checkForLoop(index, this.state.droppingPieceType);
+        if (loopLength !== 0 && loopLength !== 48 - this.state.remainingPieces + 1) {
+            return GridStates.Blank;
         }
 
         return GridStates.Alternative;
@@ -724,7 +745,7 @@ class Game extends React.Component {
             case 0: {
                 if (this.state.gameState === GameStates.WinnerDefeat) {
                     return 'score score-defeat';
-                } else if (this.isWinnerActive()) {
+                } else if (this.isWinnerTurn()) {
                     if (this.state.gameRole === GameRoles.Audience || this.isOwnActive()) {
                         return 'score score-own-active';
                     } else {
@@ -738,7 +759,7 @@ class Game extends React.Component {
             case 1: {
                 if (this.state.gameState === GameStates.ChallengerDefeat) {
                     return 'score score-defeat';
-                } else if (this.isChallengerActive()) {
+                } else if (this.isChallengerTurn()) {
                     if (this.state.gameRole === GameRoles.Audience || !this.isOwnActive()) {
                         return 'score score-opponent-active';
                     } else {
@@ -775,8 +796,8 @@ class Game extends React.Component {
                 </div>
                 <span>此回合剩余 <b>{this.state.remainingPiecesInThisTurn}</b> 枚棋子</span>
                 <div className="toolbar">
-                    {(this.state.gameState === GameStates.WinnerTurn || this.state.gameState === GameStates.ChallengerTurn) && <button onClick={this.handleEndTurnClick}>结束回合</button>}
-                    {(this.state.gameState === GameStates.WinnerTurn || this.state.gameState === GameStates.ChallengerTurn) && <button onClick={this.handleDeclareNoSolutionClick}>宣称无解</button>}
+                    {(this.state.gameState === GameStates.WinnerDropping || this.state.gameState === GameStates.ChallengerDropping) && this.state.remainingPiecesInThisTurn !== 3 && <button onClick={this.handleEndTurnClick}>结束回合</button>}
+                    {(this.state.gameState === GameStates.WinnerDropping || this.state.gameState === GameStates.ChallengerDropping) && this.state.remainingPiecesInThisTurn === 3 && <button onClick={this.handleDeclareNoSolutionClick}>宣称无解</button>}
                     {(this.state.gameState === GameStates.WinnerChecking || this.state.gameState === GameStates.ChallengerChecking) && <button onClick={this.handleAdmitDefeatClick}>认输</button>}
                 </div>
             </div>
@@ -831,7 +852,7 @@ class Menu extends React.Component {
             <p>或者</p>
             <div><span>房间代码：</span><input value={this.state.roomKey} onChange={this.handleRoomKeyChange}></input></div>
             <button onClick={this.handleJoinGame} className={this.state.roomKey ? '' : 'disable'}>加入一局游戏</button>
-            <p><a href="https://github.com/goooxu/web-technology/issues/1" target="_blank">游戏规则</a></p>
+            <p><a href="https://github.com/goooxu/web-technology/issues/1" target="_blank">游戏规则</a>&nbsp;&nbsp;<a href="https://github.com/goooxu/web-technology/issues/5" target="_blank">更新日志</a></p>
         </div>;
     }
 }
