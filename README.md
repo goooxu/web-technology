@@ -26,3 +26,8 @@
 
 使用了React框架，多线程，动态图表
 
+## [最小代价网格问题](https://goooxu.github.io/web-technology/mesh)
+
+具体问题请见[此处](https://github.com/goooxu/web-technology/issues/6)
+
+使用了React框架，动态矢量图
