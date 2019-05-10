@@ -76,7 +76,7 @@ class Network {
         this.adjacencyList[pointIndex1].delete(pointIndex2);
         this.adjacencyList[pointIndex2].delete(pointIndex1);
     }
-
+    
     generatePoints(width, height, pointNumber) {
         const center = { x: width / 2, y: height / 2 };
         const radius2 = Math.pow(Math.min(width / 2, height / 2), 2);
@@ -96,11 +96,7 @@ class Network {
     }
 
     normalizeTriangle(trianglePointList) {
-        if (this.anticlockwise(
-            trianglePointList[0],
-            trianglePointList[1],
-            trianglePointList[2]
-        ) !== 1) {
+        if (this.anticlockwise(...trianglePointList) !== 1) {
             [trianglePointList[1], trianglePointList[2]] = [trianglePointList[2], trianglePointList[1]];
         }
         return trianglePointList;
@@ -215,10 +211,7 @@ class Network {
         }
     }
 
-    buildMesh(pointList) {
-        if (!pointList) {
-            pointList = [...Array(this.points.length).keys()];
-        }
+    buildMesh(pointList = [...this.points.keys()]) {
         const [outerPolygonPointList, restPointList] = this.findBoundingPolygon(pointList);
         if (restPointList.length >= 3) {
             const innerPolygonPointList = this.buildMesh(restPointList);
@@ -252,7 +245,7 @@ class Network {
                 continue;
             }
 
-            const diagonalLine = [this.lineIndexFromEndpointIndex(adjacentPointPair[0], adjacentPointPair[1]), ...adjacentPointPair];
+            const diagonalLine = [this.lineIndexFromEndpointIndex(...adjacentPointPair), ...adjacentPointPair];
 
             const lineLength = this.distance(line[1], line[2]);
             const diagonalLineLength = this.distance(diagonalLine[1], diagonalLine[2]);
@@ -265,16 +258,13 @@ class Network {
             this.addInternalLine(diagonalLine[1], diagonalLine[2]);
             replacementLog.push([line[0], diagonalLine[0], diagonalLineLength - lineLength]);
 
-            lineQueue.push(diagonalLine);
-            lineQueueIndexSet.add(diagonalLine[0]);
-
             //add influenced lines
             const influencedLines = [
                 [line[1], diagonalLine[1]],
                 [line[1], diagonalLine[2]],
                 [line[2], diagonalLine[1]],
                 [line[2], diagonalLine[2]]
-            ].map(i => [this.lineIndexFromEndpointIndex(i[0], i[1]), ...i]);
+            ].map(i => [this.lineIndexFromEndpointIndex(...i), ...i]);
 
             for (const influencedLine of influencedLines) {
                 if (this.boundingLineList.has(influencedLine[0]) || lineQueueIndexSet.has(influencedLine[0])) {
@@ -302,7 +292,7 @@ class Network {
                 continue;
             }
 
-            const diagonalLine = [this.lineIndexFromEndpointIndex(adjacentPointPair[0], adjacentPointPair[1]), ...adjacentPointPair];
+            const diagonalLine = [this.lineIndexFromEndpointIndex(...adjacentPointPair), ...adjacentPointPair];
 
             const lineLength = this.distance(line[1], line[2]);
             const diagonalLineLength = this.distance(diagonalLine[1], diagonalLine[2]);
@@ -395,11 +385,13 @@ class App extends React.Component {
             currentReplacementRow: 0,
             totalLength: 0.0,
             animationDuration: 1000,
-            showIndex: false
+            showPoint: true,
+            showLabel: false
         };
         this.handlePointNumberChange = this.handlePointNumberChange.bind(this);
         this.handlePointNumberSubmit = this.handlePointNumberSubmit.bind(this);
-        this.handleShowIndexChange = this.handleShowIndexChange.bind(this);
+        this.handleShowPointChange = this.handleShowPointChange.bind(this);
+        this.handleShowLabelChange = this.handleShowLabelChange.bind(this);
         this.handleFineTune = this.handleFineTune.bind(this);
         this.handleShuffle = this.handleShuffle.bind(this);
         this.handleAnimationStop = this.handleAnimationStop.bind(this);
@@ -451,10 +443,12 @@ class App extends React.Component {
         this.showNetwork();
     }
 
-    handleShowIndexChange(e) {
-        this.setState({
-            showIndex: e.target.checked
-        });
+    handleShowPointChange(e) {
+        this.setState({ showPoint: e.target.checked });
+    }
+
+    handleShowLabelChange(e) {
+        this.setState({ showLabel: e.target.checked });
     }
 
     handleFineTune() {
@@ -512,7 +506,7 @@ class App extends React.Component {
                 const line = this.network.getLine(lineIndex);
                 return <React.Fragment key={lineIndex}>
                     <line x1={line[0].x} y1={this.props.height - line[0].y} x2={line[1].x} y2={this.props.height - line[1].y} stroke="silver" strokeWidth="1.5" />
-                    {this.state.showIndex && <text x={(line[0].x + line[1].x) / 2} y={this.props.height - (line[0].y + line[1].y) / 2} stroke="blue" fill="white">{lineIndex}</text>}
+                    {this.state.showLabel && <text x={(line[0].x + line[1].x) / 2} y={this.props.height - (line[0].y + line[1].y) / 2} stroke="blue" fill="white">{lineIndex}</text>}
                 </React.Fragment>;
             });
     }
@@ -540,7 +534,7 @@ class App extends React.Component {
     renderPoints() {
         return this.state.points.map((point, pointIndex) => <React.Fragment key={pointIndex}>
             <circle cx={point.x} cy={this.props.height - point.y} r="3" fill="red" />
-            {this.state.showIndex && <text x={point.x} y={this.props.height - point.y} stroke="brown" fill="white">{pointIndex}</text>}
+            {this.state.showLabel && <text x={point.x} y={this.props.height - point.y} stroke="brown" fill="white">{pointIndex}</text>}
         </React.Fragment>);
     }
 
@@ -554,7 +548,9 @@ class App extends React.Component {
                     <span>,&nbsp;&nbsp;</span>
                     <span>Triangle number: {(this.state.boundingLineList.length + this.state.internalLineList.size * 2) / 3}</span>
                     <span>,&nbsp;&nbsp;</span>
-                    <span><label>Show index: <input type="checkbox" checked={this.state.showIndex} onChange={this.handleShowIndexChange} /></label></span>
+                    <span><label>Show points: <input type="checkbox" checked={this.state.showPoint} onChange={this.handleShowPointChange} /></label></span>
+                    <span>,&nbsp;&nbsp;</span>
+                    <span><label>Show labels: <input type="checkbox" checked={this.state.showLabel} onChange={this.handleShowLabelChange} /></label></span>
                 </p>
                 <p>
                     <span><button onClick={this.handleFineTune} disabled={this.state.fineTuning}>Fine tune</button></span>
@@ -574,10 +570,10 @@ class App extends React.Component {
             </div>
             <svg width={this.props.width} height={this.props.height} xmlns="http://www.w3.org/2000/svg">
                 <g>
-                    {this.renderBoundingLines()}
                     {this.renderInternalLines()}
                     {this.renderReplacementAnimation()}
-                    {this.renderPoints()};
+                    {this.renderBoundingLines()}
+                    {this.state.showPoint && this.renderPoints()};
                 </g>
             </svg>
         </React.Fragment>;
