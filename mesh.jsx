@@ -29,12 +29,13 @@ function intersectant(p1, p2, p3, p4) {
 }
 
 class Network {
-    constructor(points) {
-        this.points = points;
+    constructor(width, height, pointNumber) {
+        this.randomNumberPool = new RandomNumberPool();
+        this.points = this.generatePoints(width, height, pointNumber);
         this.lines = new Map();
         this.boundingLineList = new Set();
         this.internalLineList = new Set();
-        this.adjacencyList = Array.from({ length: points.length }, () => new Set());
+        this.adjacencyList = Array.from({ length: pointNumber }, () => new Set());
     }
 
     distance(index1, index2) {
@@ -74,6 +75,24 @@ class Network {
         this.internalLineList.delete(lineIndex);
         this.adjacencyList[pointIndex1].delete(pointIndex2);
         this.adjacencyList[pointIndex2].delete(pointIndex1);
+    }
+
+    generatePoints(width, height, pointNumber) {
+        const center = { x: width / 2, y: height / 2 };
+        const radius2 = Math.pow(Math.min(width / 2, height / 2), 2);
+
+        const points = [];
+        while (points.length < pointNumber) {
+            const point = {
+                x: this.randomNumberPool.next() % width,
+                y: this.randomNumberPool.next() % height
+            };
+            if ((point.x - center.x) * (point.x - center.x) + (point.y - center.y) * (point.y - center.y) < radius2) {
+                points.push(point);
+            }
+        }
+
+        return points;
     }
 
     normalizeTriangle(trianglePointList) {
@@ -196,6 +215,21 @@ class Network {
         }
     }
 
+    buildMesh(pointList) {
+        if (!pointList) {
+            pointList = [...Array(this.points.length).keys()];
+        }
+        const [outerPolygonPointList, restPointList] = this.findBoundingPolygon(pointList);
+        if (restPointList.length >= 3) {
+            const innerPolygonPointList = this.buildMesh(restPointList);
+            this.connectPolygons(outerPolygonPointList, innerPolygonPointList);
+        } else {
+            this.connectPolygons(outerPolygonPointList, restPointList);
+        }
+
+        return outerPolygonPointList;
+    }
+
     selectAdjacentPointPair(line) {
         const commonAdjacentPointList = [...this.adjacencyList[line[1]]].filter(i => this.adjacencyList[line[2]].has(i));
         const pointList = [line[2], ...commonAdjacentPointList];
@@ -208,8 +242,6 @@ class Network {
         const lineQueue = [...this.internalLineList.values()].map(i => [i, this.lines.get(i)]).map(i => [i[0], i[1][0], i[1][1]]);
         const lineQueueIndexSet = new Set(this.internalLineList);
         const replacementLog = [];
-
-        lineQueue.sort((a, b) => this.distance(b[1], b[2]) - this.distance(a[1], a[2]));
 
         while (lineQueue.length !== 0) {
             const line = lineQueue.shift();
@@ -231,8 +263,10 @@ class Network {
 
             this.deleteInternalLine(line[1], line[2]);
             this.addInternalLine(diagonalLine[1], diagonalLine[2]);
-            lineQueueIndexSet.delete(line[0]);
-            replacementLog.push([line[0], diagonalLine[0]]);
+            replacementLog.push([line[0], diagonalLine[0], diagonalLineLength - lineLength]);
+
+            lineQueue.push(diagonalLine);
+            lineQueueIndexSet.add(diagonalLine[0]);
 
             //add influenced lines
             const influencedLines = [
@@ -255,26 +289,46 @@ class Network {
         return replacementLog;
     }
 
-    build() {
-        let outerBoundingPolygonPointList;
-        let restPointList = [...Array(this.points.length).keys()];
-        do {
-            let boundingPolygonPointList;
-            [boundingPolygonPointList, restPointList] = this.findBoundingPolygon(restPointList);
-            if (outerBoundingPolygonPointList) {
-                this.connectPolygons(outerBoundingPolygonPointList, boundingPolygonPointList);
+    shuffle() {
+        const lineQueue = [...this.internalLineList.values()].map(i => [i, this.lines.get(i)]).map(i => [i[0], i[1][0], i[1][1]]);
+        const replacementLog = [];
+
+        for (let k = 0; k < this.internalLineList.size;) {
+            const randomIndex = this.randomNumberPool.next() % lineQueue.length;
+            const line = lineQueue.splice(randomIndex, 1)[0];
+
+            const adjacentPointPair = this.selectAdjacentPointPair(line);
+            if (!this.intersectant(line[1], line[2], adjacentPointPair[0], adjacentPointPair[1])) {
+                continue;
             }
-            outerBoundingPolygonPointList = boundingPolygonPointList;
-        } while (restPointList.length !== 0);
-        this.connectPolygons(outerBoundingPolygonPointList, []);
-        this.totalLength = [...this.internalLineList].reduce((length, lineIndex) => {
-            const line = this.lines.get(lineIndex);
-            return length + this.distance(line[0], line[1]);
-        }, 0.0);
+
+            const diagonalLine = [this.lineIndexFromEndpointIndex(adjacentPointPair[0], adjacentPointPair[1]), ...adjacentPointPair];
+
+            const lineLength = this.distance(line[1], line[2]);
+            const diagonalLineLength = this.distance(diagonalLine[1], diagonalLine[2]);
+
+            this.deleteInternalLine(line[1], line[2]);
+            this.addInternalLine(diagonalLine[1], diagonalLine[2]);
+            replacementLog.push([line[0], diagonalLine[0], diagonalLineLength - lineLength]);
+
+            lineQueue.push(diagonalLine);
+
+            k++;
+        }
+
+        return replacementLog;
     }
 
     getLine(lineIndex) {
-        return this.lines.get(lineIndex);
+        const pointList = this.lines.get(lineIndex);
+        return pointList.map(i => this.points[i]);
+    }
+
+    totalLength() {
+        return [...this.internalLineList].reduce((length, lineIndex) => {
+            const line = this.lines.get(lineIndex);
+            return length + this.distance(line[0], line[1]);
+        }, 0.0);
     }
 }
 
@@ -343,68 +397,39 @@ class App extends React.Component {
             animationDuration: 1000,
             showIndex: false
         };
-        this.randomNumberPool = new RandomNumberPool();
         this.handlePointNumberChange = this.handlePointNumberChange.bind(this);
         this.handlePointNumberSubmit = this.handlePointNumberSubmit.bind(this);
         this.handleShowIndexChange = this.handleShowIndexChange.bind(this);
         this.handleFineTune = this.handleFineTune.bind(this);
+        this.handleShuffle = this.handleShuffle.bind(this);
         this.handleAnimationStop = this.handleAnimationStop.bind(this);
         this.handleAnimationSpeedUp = this.handleAnimationSpeedUp.bind(this);
         this.handleAnimationSpeedDown = this.handleAnimationSpeedDown.bind(this);
     }
 
-    createNetwork() {
-        const center = {
-            x: this.props.width / 2,
-            y: this.props.height / 2
-        };
-        const radius = Math.min(this.props.width / 2, this.props.height / 2);
-
-        const points = [];
-        while (points.length < this.state.pointNumber) {
-            const point = {
-                x: this.randomNumberPool.next() % this.props.width,
-                y: this.randomNumberPool.next() % this.props.height
-            };
-            if ((point.x - center.x) * (point.x - center.x) + (point.y - center.y) * (point.y - center.y) < radius * radius) {
-                points.push(point);
-            }
-        }
-        const network = new Network(points);
-        network.build();
-        return network;
-    }
-
     showNetwork() {
-        this.network = this.createNetwork();
+        this.network = new Network(this.props.width, this.props.height, this.state.pointNumber);
+        this.network.buildMesh();
         this.setState({
             points: this.network.points,
             boundingLineList: [...this.network.boundingLineList],
             internalLineList: new Set(this.network.internalLineList),
+            totalLength: this.network.totalLength(),
             fineTuning: false
         });
     }
 
     showNextReplacement() {
         this.setState(state => {
-            const replacementPair = state.replacementLog[state.currentReplacementRow];
-            state.internalLineList.delete(replacementPair[0]);
-            state.internalLineList.add(replacementPair[1]);
-            const oldLine = this.network.getLine(replacementPair[0]);
-            const newLine = this.network.getLine(replacementPair[1]);
-            state.totalLength = state.totalLength - distance(state.points[oldLine[0]], state.points[oldLine[1]]) + distance(state.points[newLine[0]], state.points[newLine[1]]);
+            const replacementLogRow = state.replacementLog[state.currentReplacementRow];
+            state.internalLineList.delete(replacementLogRow[0]);
+            state.internalLineList.add(replacementLogRow[1]);
+            state.totalLength += replacementLogRow[2];
             state.currentReplacementRow += 1;
+            if (state.currentReplacementRow === state.replacementLog.length) {
+                state.fineTuning = false;
+            }
             return state;
-        });
-    }
-
-    showFineTuneAnimation() {
-        const replacementLog = this.network.fineTune();
-        this.setState({
-            fineTuning: true,
-            replacementLog,
-            currentReplacementRow: 0,
-            totalLength: this.network.totalLength
         });
     }
 
@@ -433,7 +458,21 @@ class App extends React.Component {
     }
 
     handleFineTune() {
-        this.showFineTuneAnimation();
+        const replacementLog = this.network.fineTune();
+        this.setState({
+            fineTuning: replacementLog.length !== 0,
+            replacementLog,
+            currentReplacementRow: 0
+        });
+    }
+
+    handleShuffle() {
+        const replacementLog = this.network.shuffle();
+        this.setState({
+            fineTuning: replacementLog.length !== 0,
+            replacementLog,
+            currentReplacementRow: 0
+        });
     }
 
     handleAnimationSpeedUp() {
@@ -461,10 +500,8 @@ class App extends React.Component {
     renderBoundingLines() {
         return this.state.boundingLineList.map(lineIndex => {
             const line = this.network.getLine(lineIndex);
-            const point1 = this.state.points[line[0]];
-            const point2 = this.state.points[line[1]];
             return <React.Fragment key={lineIndex}>
-                <line x1={point1.x} y1={this.props.height - point1.y} x2={point2.x} y2={this.props.height - point2.y} stroke="black" strokeWidth="1.5" />
+                <line x1={line[0].x} y1={this.props.height - line[0].y} x2={line[1].x} y2={this.props.height - line[1].y} stroke="black" strokeWidth="1.5" />
             </React.Fragment>;
         });
     }
@@ -473,11 +510,9 @@ class App extends React.Component {
         return [...this.state.internalLineList]
             .map(lineIndex => {
                 const line = this.network.getLine(lineIndex);
-                const point1 = this.state.points[line[0]];
-                const point2 = this.state.points[line[1]];
                 return <React.Fragment key={lineIndex}>
-                    <line x1={point1.x} y1={this.props.height - point1.y} x2={point2.x} y2={this.props.height - point2.y} stroke="silver" strokeWidth="1.5" />
-                    {this.state.showIndex && <text x={(point1.x + point2.x) / 2} y={this.props.height - (point1.y + point2.y) / 2} stroke="blue" fill="white">{lineIndex}</text>}
+                    <line x1={line[0].x} y1={this.props.height - line[0].y} x2={line[1].x} y2={this.props.height - line[1].y} stroke="silver" strokeWidth="1.5" />
+                    {this.state.showIndex && <text x={(line[0].x + line[1].x) / 2} y={this.props.height - (line[0].y + line[1].y) / 2} stroke="blue" fill="white">{lineIndex}</text>}
                 </React.Fragment>;
             });
     }
@@ -486,19 +521,15 @@ class App extends React.Component {
         if (this.state.fineTuning && this.state.currentReplacementRow >= 0 && this.state.currentReplacementRow < this.state.replacementLog.length) {
             const oldLine = this.network.getLine(this.state.replacementLog[this.state.currentReplacementRow][0]);
             const newLine = this.network.getLine(this.state.replacementLog[this.state.currentReplacementRow][1]);
-            const point1 = this.state.points[oldLine[0]];
-            const point2 = this.state.points[oldLine[1]];
-            const point3 = this.state.points[newLine[0]];
-            const point4 = this.state.points[newLine[1]];
             return <React.Fragment>
                 <polygon
-                    points={`${point1.x},${this.props.height - point1.y} ${point3.x},${this.props.height - point3.y} ${point2.x},${this.props.height - point2.y} ${point4.x},${this.props.height - point4.y}`}
+                    points={`${oldLine[0].x},${this.props.height - oldLine[0].y} ${newLine[0].x},${this.props.height - newLine[0].y} ${oldLine[1].x},${this.props.height - oldLine[1].y} ${newLine[1].x},${this.props.height - newLine[1].y}`}
                     fill="lightyellow" stroke="grey" strokeWidth="1.5" />
-                <AnimationLine key={this.state.replacementLog[this.state.currentReplacementRow][1]}
-                    x1={point1.x} y1={this.props.height - point1.y}
-                    x2={point2.x} y2={this.props.height - point2.y}
-                    x3={point3.x} y3={this.props.height - point3.y}
-                    x4={point4.x} y4={this.props.height - point4.y}
+                <AnimationLine key={-this.state.currentReplacementRow}
+                    x1={oldLine[0].x} y1={this.props.height - oldLine[0].y}
+                    x2={oldLine[1].x} y2={this.props.height - oldLine[1].y}
+                    x3={newLine[0].x} y3={this.props.height - newLine[0].y}
+                    x4={newLine[1].x} y4={this.props.height - newLine[1].y}
                     quiescentTime={this.state.animationDuration * 0.2} animatingTime={this.state.animationDuration * 0.8}
                     stroke="silver" strokeWidth="2"
                     stop={this.handleAnimationStop} />
@@ -517,7 +548,7 @@ class App extends React.Component {
         return <React.Fragment>
             <div>
                 <p>
-                    <span>Point number: <input type="number" value={this.state.pointNumber} onChange={this.handlePointNumberChange} /> <button onClick={this.handlePointNumberSubmit}>Create</button></span>
+                    <span>Point number: <input type="number" value={this.state.pointNumber} onChange={this.handlePointNumberChange} /> <button onClick={this.handlePointNumberSubmit}>Create network</button></span>
                     <span>,&nbsp;&nbsp;</span>
                     <span>Edge number: {this.state.boundingLineList.length + this.state.internalLineList.size}</span>
                     <span>,&nbsp;&nbsp;</span>
@@ -527,14 +558,18 @@ class App extends React.Component {
                 </p>
                 <p>
                     <span><button onClick={this.handleFineTune} disabled={this.state.fineTuning}>Fine tune</button></span>
-                    {this.state.fineTuning && <React.Fragment>
+                    <span>,&nbsp;&nbsp;</span>
+                    <span><button onClick={this.handleShuffle} disabled={this.state.fineTuning}>Shuffle</button></span>
+                    <React.Fragment>
                         <span>,&nbsp;&nbsp;</span>
-                        <span>Fine tune steps: {this.state.currentReplacementRow}/{this.state.replacementLog.length}</span>
+                        <span>Steps: {this.state.currentReplacementRow}/{this.state.replacementLog.length}</span>
                         <span>,&nbsp;&nbsp;</span>
                         <span>Total length: {this.state.totalLength.toFixed(2)}</span>
-                        <span>,&nbsp;&nbsp;</span>
-                        <span>Animation speed: <button onClick={this.handleAnimationSpeedUp}>+</button>&nbsp;<button onClick={this.handleAnimationSpeedDown}>-</button></span>
-                    </React.Fragment>}
+                        {this.state.fineTuning && <React.Fragment>
+                            <span>,&nbsp;&nbsp;</span>
+                            <span>Animation speed: <button onClick={this.handleAnimationSpeedUp}>+</button>&nbsp;<button onClick={this.handleAnimationSpeedDown}>-</button></span>
+                        </React.Fragment>}
+                    </React.Fragment>
                 </p>
             </div>
             <svg width={this.props.width} height={this.props.height} xmlns="http://www.w3.org/2000/svg">
