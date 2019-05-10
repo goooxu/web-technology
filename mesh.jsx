@@ -30,53 +30,60 @@ function intersectant(p1, p2, p3, p4) {
 
 class Network {
     constructor(width, height, pointNumber) {
-        this.randomNumberPool = new RandomNumberPool();
-        this.points = this.generatePoints(width, height, pointNumber);
-        this.lines = new Map();
-        this.boundingLineList = new Set();
-        this.internalLineList = new Set();
-        this.adjacencyList = Array.from({ length: pointNumber }, () => new Set());
+        this._randomNumberPool = new RandomNumberPool();
+        this._points = this.generatePoints(width, height, pointNumber);
+        this._lines = new Map();
+        this._boundingLineList = new Set();
+        this._internalLineList = new Set();
+        this._adjacencyList = Array.from({ length: pointNumber }, () => new Set());
     }
 
     distance(index1, index2) {
-        return distance(this.points[index1], this.points[index2]);
+        return distance(this._points[index1], this._points[index2]);
     }
 
     anticlockwise(index1, index2, index3) {
-        return anticlockwise(this.points[index1], this.points[index2], this.points[index3]);
+        return anticlockwise(this._points[index1], this._points[index2], this._points[index3]);
     }
 
     intersectant(index1, index2, index3, index4) {
-        return intersectant(this.points[index1], this.points[index2], this.points[index3], this.points[index4]);
+        return intersectant(this._points[index1], this._points[index2], this._points[index3], this._points[index4]);
     }
 
     lineIndexFromEndpointIndex(index1, index2) {
         return (index1 + index2) * (index1 + index2 + 1) / 2 + Math.min(index1, index2);
     }
 
+    totalLength(lineList) {
+        return lineList.reduce((length, lineIndex) => {
+            const line = this._lines.get(lineIndex);
+            return length + this.distance(line[0], line[1]);
+        }, 0.0);
+    }
+
     addBoundingLine(pointIndex1, pointIndex2) {
         const lineIndex = this.lineIndexFromEndpointIndex(pointIndex1, pointIndex2);
-        this.lines.set(lineIndex, [pointIndex1, pointIndex2]);
-        this.boundingLineList.add(lineIndex);
-        this.adjacencyList[pointIndex1].add(pointIndex2);
-        this.adjacencyList[pointIndex2].add(pointIndex1);
+        this._lines.set(lineIndex, [pointIndex1, pointIndex2]);
+        this._boundingLineList.add(lineIndex);
+        this._adjacencyList[pointIndex1].add(pointIndex2);
+        this._adjacencyList[pointIndex2].add(pointIndex1);
     }
 
     addInternalLine(pointIndex1, pointIndex2) {
         const lineIndex = this.lineIndexFromEndpointIndex(pointIndex1, pointIndex2);
-        this.lines.set(lineIndex, [pointIndex1, pointIndex2]);
-        this.internalLineList.add(lineIndex);
-        this.adjacencyList[pointIndex1].add(pointIndex2);
-        this.adjacencyList[pointIndex2].add(pointIndex1);
+        this._lines.set(lineIndex, [pointIndex1, pointIndex2]);
+        this._internalLineList.add(lineIndex);
+        this._adjacencyList[pointIndex1].add(pointIndex2);
+        this._adjacencyList[pointIndex2].add(pointIndex1);
     }
 
     deleteInternalLine(pointIndex1, pointIndex2) {
         const lineIndex = this.lineIndexFromEndpointIndex(pointIndex1, pointIndex2);
-        this.internalLineList.delete(lineIndex);
-        this.adjacencyList[pointIndex1].delete(pointIndex2);
-        this.adjacencyList[pointIndex2].delete(pointIndex1);
+        this._internalLineList.delete(lineIndex);
+        this._adjacencyList[pointIndex1].delete(pointIndex2);
+        this._adjacencyList[pointIndex2].delete(pointIndex1);
     }
-    
+
     generatePoints(width, height, pointNumber) {
         const center = { x: width / 2, y: height / 2 };
         const radius2 = Math.pow(Math.min(width / 2, height / 2), 2);
@@ -84,8 +91,8 @@ class Network {
         const points = [];
         while (points.length < pointNumber) {
             const point = {
-                x: this.randomNumberPool.next() % width,
-                y: this.randomNumberPool.next() % height
+                x: this._randomNumberPool.next() % width,
+                y: this._randomNumberPool.next() % height
             };
             if ((point.x - center.x) * (point.x - center.x) + (point.y - center.y) * (point.y - center.y) < radius2) {
                 points.push(point);
@@ -124,7 +131,7 @@ class Network {
     }
 
     findBoundingPolygon(pointList) {
-        const bounding = pointList.length === this.points.length;
+        const bounding = pointList.length === this._points.length;
         if (pointList.length < 3) {
             return [pointList, []];
         }
@@ -211,10 +218,10 @@ class Network {
         }
     }
 
-    buildMesh(pointList = [...this.points.keys()]) {
+    buildConnectionSchemeInternal(pointList) {
         const [outerPolygonPointList, restPointList] = this.findBoundingPolygon(pointList);
         if (restPointList.length >= 3) {
-            const innerPolygonPointList = this.buildMesh(restPointList);
+            const innerPolygonPointList = this.buildConnectionSchemeInternal(restPointList);
             this.connectPolygons(outerPolygonPointList, innerPolygonPointList);
         } else {
             this.connectPolygons(outerPolygonPointList, restPointList);
@@ -223,8 +230,19 @@ class Network {
         return outerPolygonPointList;
     }
 
+    buildConnectionScheme() {
+        this.buildConnectionSchemeInternal([...this._points.keys()]);
+        const internalLineList = [...this._internalLineList];
+        const internalLineTotalLength = this.totalLength(internalLineList);
+        return [
+            [...this._boundingLineList],
+            internalLineList,
+            internalLineTotalLength
+        ];
+    }
+
     selectAdjacentPointPair(line) {
-        const commonAdjacentPointList = [...this.adjacencyList[line[1]]].filter(i => this.adjacencyList[line[2]].has(i));
+        const commonAdjacentPointList = [...this._adjacencyList[line[1]]].filter(i => this._adjacencyList[line[2]].has(i));
         const pointList = [line[2], ...commonAdjacentPointList];
         pointList.sort((a, b) => this.anticlockwise(line[1], a, b));
         const pos = pointList.indexOf(line[2]);
@@ -232,8 +250,8 @@ class Network {
     }
 
     fineTune() {
-        const lineQueue = [...this.internalLineList.values()].map(i => [i, this.lines.get(i)]).map(i => [i[0], i[1][0], i[1][1]]);
-        const lineQueueIndexSet = new Set(this.internalLineList);
+        const lineQueue = [...this._internalLineList.values()].map(i => [i, this._lines.get(i)]).map(i => [i[0], i[1][0], i[1][1]]);
+        const lineQueueIndexSet = new Set(this._internalLineList);
         const replacementLog = [];
 
         while (lineQueue.length !== 0) {
@@ -267,7 +285,7 @@ class Network {
             ].map(i => [this.lineIndexFromEndpointIndex(...i), ...i]);
 
             for (const influencedLine of influencedLines) {
-                if (this.boundingLineList.has(influencedLine[0]) || lineQueueIndexSet.has(influencedLine[0])) {
+                if (this._boundingLineList.has(influencedLine[0]) || lineQueueIndexSet.has(influencedLine[0])) {
                     continue;
                 }
 
@@ -276,15 +294,21 @@ class Network {
             }
         }
 
-        return replacementLog;
+        const internalLineList = [...this._internalLineList];
+        const internalLineTotalLength = this.totalLength(internalLineList);
+
+        return [
+            replacementLog,
+            internalLineList,
+            internalLineTotalLength];
     }
 
     shuffle() {
-        const lineQueue = [...this.internalLineList.values()].map(i => [i, this.lines.get(i)]).map(i => [i[0], i[1][0], i[1][1]]);
+        const lineQueue = [...this._internalLineList.values()].map(i => [i, this._lines.get(i)]).map(i => [i[0], i[1][0], i[1][1]]);
         const replacementLog = [];
 
-        for (let k = 0; k < this.internalLineList.size;) {
-            const randomIndex = this.randomNumberPool.next() % lineQueue.length;
+        for (let k = 0; k < this._internalLineList.size;) {
+            const randomIndex = this._randomNumberPool.next() % lineQueue.length;
             const line = lineQueue.splice(randomIndex, 1)[0];
 
             const adjacentPointPair = this.selectAdjacentPointPair(line);
@@ -306,19 +330,22 @@ class Network {
             k++;
         }
 
-        return replacementLog;
+        const internalLineList = [...this._internalLineList];
+        const internalLineTotalLength = this.totalLength(internalLineList);
+
+        return [
+            replacementLog,
+            internalLineList,
+            internalLineTotalLength];
+    }
+
+    points() {
+        return [...this._points];
     }
 
     getLine(lineIndex) {
-        const pointList = this.lines.get(lineIndex);
-        return pointList.map(i => this.points[i]);
-    }
-
-    totalLength() {
-        return [...this.internalLineList].reduce((length, lineIndex) => {
-            const line = this.lines.get(lineIndex);
-            return length + this.distance(line[0], line[1]);
-        }, 0.0);
+        const pointList = this._lines.get(lineIndex);
+        return pointList.map(i => this._points[i]);
     }
 }
 
@@ -376,57 +403,108 @@ class App extends React.Component {
         super(props);
         this.state = {
             pointNumber: 9,
-            fineTuneSteps: 0,
             points: [],
             boundingLineList: [],
             internalLineList: new Set(),
-            fineTuning: false,
+            internalLineTotalLength: 0.0,
+            connectionSchemeRecords: [],
+            activeRecordIndex: -1,
+            replaying: false,
             replacementLog: [],
-            currentReplacementRow: 0,
-            totalLength: 0.0,
-            animationDuration: 1000,
+            currentReplayRow: 0,
+            replayAnimationDuration: 1000,
             showPoint: true,
+            showReplay: true,
             showLabel: false
         };
         this.handlePointNumberChange = this.handlePointNumberChange.bind(this);
         this.handlePointNumberSubmit = this.handlePointNumberSubmit.bind(this);
         this.handleShowPointChange = this.handleShowPointChange.bind(this);
+        this.handleShowReplayChange = this.handleShowReplayChange.bind(this);
         this.handleShowLabelChange = this.handleShowLabelChange.bind(this);
         this.handleFineTune = this.handleFineTune.bind(this);
         this.handleShuffle = this.handleShuffle.bind(this);
         this.handleAnimationStop = this.handleAnimationStop.bind(this);
         this.handleAnimationSpeedUp = this.handleAnimationSpeedUp.bind(this);
         this.handleAnimationSpeedDown = this.handleAnimationSpeedDown.bind(this);
+        this.handleRecordShow = this.handleRecordShow.bind(this);
+        this.handleRecordDelete = this.handleRecordDelete.bind(this);
     }
 
-    showNetwork() {
-        this.network = new Network(this.props.width, this.props.height, this.state.pointNumber);
-        this.network.buildMesh();
+    setupMesh(points, boundingLineList, callback) {
         this.setState({
-            points: this.network.points,
-            boundingLineList: [...this.network.boundingLineList],
-            internalLineList: new Set(this.network.internalLineList),
-            totalLength: this.network.totalLength(),
-            fineTuning: false
+            points,
+            boundingLineList,
+            internalLineList: new Set(),
+            internalLineTotalLength: 0.0,
+            connectionSchemeRecords: [],
+            activeRecordIndex: -1,
+            replaying: false
+        }, callback);
+    }
+
+    showConnectionScheme(internalLineList, internalLineTotalLength) {
+        this.setState(state => {
+            state.replaying = false;
+            state.internalLineList = new Set(internalLineList);
+            state.internalLineTotalLength = internalLineTotalLength;
+            state.connectionSchemeRecords.push({
+                internalLineList,
+                internalLineTotalLength,
+                visible: true
+            });
+            state.activeRecordIndex = state.connectionSchemeRecords.length - 1;
+            return state;
         });
     }
 
-    showNextReplacement() {
+    showConnectionSchemeWithReplay(replacementLog, internalLineList, internalLineTotalLength) {
         this.setState(state => {
-            const replacementLogRow = state.replacementLog[state.currentReplacementRow];
-            state.internalLineList.delete(replacementLogRow[0]);
-            state.internalLineList.add(replacementLogRow[1]);
-            state.totalLength += replacementLogRow[2];
-            state.currentReplacementRow += 1;
-            if (state.currentReplacementRow === state.replacementLog.length) {
-                state.fineTuning = false;
+            if (state.showReplay && replacementLog.length !== 0) {
+                if (state.activeRecordIndex !== state.connectionSchemeRecords.length - 1) {
+                    const record = state.connectionSchemeRecords[state.connectionSchemeRecords.length - 1];
+                    state.internalLineList = new Set(record.internalLineList);
+                    state.internalLineTotalLength = record.internalLineTotalLength;
+                }
+                state.replaying = true;
+            } else {
+                state.internalLineList = new Set(internalLineList);
+                state.internalLineTotalLength = internalLineTotalLength;
             }
+            state.replacementLog = replacementLog;
+            state.currentReplayRow = 0;
+            state.connectionSchemeRecords.push({
+                internalLineList,
+                internalLineTotalLength,
+                visible: true
+            });
+            state.activeRecordIndex = state.connectionSchemeRecords.length - 1;
             return state;
         });
     }
 
     handleAnimationStop() {
-        this.showNextReplacement();
+        this.setState(state => {
+            if (!state.showReplay) {
+                state.replaying = false;
+            }
+            if (state.replaying) {
+                const replacementLogRow = state.replacementLog[state.currentReplayRow];
+                state.internalLineList.delete(replacementLogRow[0]);
+                state.internalLineList.add(replacementLogRow[1]);
+                state.internalLineTotalLength += replacementLogRow[2];
+                state.currentReplayRow += 1;
+                if (state.currentReplayRow === state.replacementLog.length) {
+                    state.replaying = false;
+                }
+            }
+            if (!state.replaying) {
+                const record = state.connectionSchemeRecords[state.connectionSchemeRecords.length - 1];
+                state.internalLineList = new Set(record.internalLineList);
+                state.internalLineTotalLength = record.internalLineTotalLength;
+            }
+            return state;
+        });
     }
 
     handlePointNumberChange(e) {
@@ -439,12 +517,19 @@ class App extends React.Component {
 
     handlePointNumberSubmit() {
         console.clear();
-
-        this.showNetwork();
+        this.network = new Network(this.props.width, this.props.height, this.state.pointNumber);
+        const [boundingLineList, internalLineList, internalLineTotalLength] = this.network.buildConnectionScheme();
+        this.setupMesh(this.network.points(), boundingLineList, () => {
+            this.showConnectionScheme(internalLineList, internalLineTotalLength);
+        });
     }
 
     handleShowPointChange(e) {
         this.setState({ showPoint: e.target.checked });
+    }
+
+    handleShowReplayChange(e) {
+        this.setState({ showReplay: e.target.checked });
     }
 
     handleShowLabelChange(e) {
@@ -452,27 +537,45 @@ class App extends React.Component {
     }
 
     handleFineTune() {
-        const replacementLog = this.network.fineTune();
-        this.setState({
-            fineTuning: replacementLog.length !== 0,
+        const [replacementLog, internalLineList, internalLineTotalLength] = this.network.fineTune();
+        this.showConnectionSchemeWithReplay(
             replacementLog,
-            currentReplacementRow: 0
-        });
+            internalLineList,
+            internalLineTotalLength);
     }
 
     handleShuffle() {
-        const replacementLog = this.network.shuffle();
-        this.setState({
-            fineTuning: replacementLog.length !== 0,
+        const [replacementLog, internalLineList, internalLineTotalLength] = this.network.shuffle();
+        this.showConnectionSchemeWithReplay(
             replacementLog,
-            currentReplacementRow: 0
+            internalLineList,
+            internalLineTotalLength);
+    }
+
+    handleRecordShow(e) {
+        const index = parseInt(e.target.dataset.tag);
+        this.setState(state => {
+            const record = state.connectionSchemeRecords[index];
+            state.replaying = false;
+            state.internalLineList = new Set(record.internalLineList);
+            state.internalLineTotalLength = record.internalLineTotalLength;
+            state.activeRecordIndex = index;
+            return state;
+        });
+    }
+
+    handleRecordDelete(e) {
+        const index = parseInt(e.target.dataset.tag);
+        this.setState(state => {
+            state.connectionSchemeRecords[index].visible = false;
+            return state;
         });
     }
 
     handleAnimationSpeedUp() {
         this.setState(state => {
-            if (state.animationDuration > 100) {
-                state.animationDuration *= 0.8;
+            if (state.replayAnimationDuration > 100) {
+                state.replayAnimationDuration *= 0.8;
             }
             return state;
         });
@@ -480,15 +583,15 @@ class App extends React.Component {
 
     handleAnimationSpeedDown() {
         this.setState(state => {
-            if (state.animationDuration < 4000) {
-                state.animationDuration *= 1.25;
+            if (state.replayAnimationDuration < 4000) {
+                state.replayAnimationDuration *= 1.25;
             }
             return state;
         });
     }
 
     componentDidMount() {
-        this.showNetwork();
+        this.handlePointNumberSubmit();
     }
 
     renderBoundingLines() {
@@ -512,19 +615,19 @@ class App extends React.Component {
     }
 
     renderReplacementAnimation() {
-        if (this.state.fineTuning && this.state.currentReplacementRow >= 0 && this.state.currentReplacementRow < this.state.replacementLog.length) {
-            const oldLine = this.network.getLine(this.state.replacementLog[this.state.currentReplacementRow][0]);
-            const newLine = this.network.getLine(this.state.replacementLog[this.state.currentReplacementRow][1]);
+        if (this.state.replaying) {
+            const oldLine = this.network.getLine(this.state.replacementLog[this.state.currentReplayRow][0]);
+            const newLine = this.network.getLine(this.state.replacementLog[this.state.currentReplayRow][1]);
             return <React.Fragment>
                 <polygon
                     points={`${oldLine[0].x},${this.props.height - oldLine[0].y} ${newLine[0].x},${this.props.height - newLine[0].y} ${oldLine[1].x},${this.props.height - oldLine[1].y} ${newLine[1].x},${this.props.height - newLine[1].y}`}
                     fill="lightyellow" stroke="grey" strokeWidth="1.5" />
-                <AnimationLine key={-this.state.currentReplacementRow}
+                <AnimationLine key={this.state.currentReplayRow}
                     x1={oldLine[0].x} y1={this.props.height - oldLine[0].y}
                     x2={oldLine[1].x} y2={this.props.height - oldLine[1].y}
                     x3={newLine[0].x} y3={this.props.height - newLine[0].y}
                     x4={newLine[1].x} y4={this.props.height - newLine[1].y}
-                    quiescentTime={this.state.animationDuration * 0.2} animatingTime={this.state.animationDuration * 0.8}
+                    quiescentTime={this.state.replayAnimationDuration * 0.2} animatingTime={this.state.replayAnimationDuration * 0.8}
                     stroke="silver" strokeWidth="2"
                     stop={this.handleAnimationStop} />
             </React.Fragment>;
@@ -542,40 +645,56 @@ class App extends React.Component {
         return <React.Fragment>
             <div>
                 <p>
-                    <span>Point number: <input type="number" value={this.state.pointNumber} onChange={this.handlePointNumberChange} /> <button onClick={this.handlePointNumberSubmit}>Create network</button></span>
+                    <span>Vertex number: <input type="number" value={this.state.pointNumber} onChange={this.handlePointNumberChange} /> <button onClick={this.handlePointNumberSubmit}>Create mesh</button></span>
                     <span>,&nbsp;&nbsp;</span>
                     <span>Edge number: {this.state.boundingLineList.length + this.state.internalLineList.size}</span>
                     <span>,&nbsp;&nbsp;</span>
+                    <span>Edge total length: {this.state.internalLineTotalLength.toFixed(2)}</span>
+                    <span>,&nbsp;&nbsp;</span>
                     <span>Triangle number: {(this.state.boundingLineList.length + this.state.internalLineList.size * 2) / 3}</span>
+                </p>
+                <p>
+                    <span><label>Show replays: <input type="checkbox" checked={this.state.showReplay} onChange={this.handleShowReplayChange} /></label></span>
                     <span>,&nbsp;&nbsp;</span>
                     <span><label>Show points: <input type="checkbox" checked={this.state.showPoint} onChange={this.handleShowPointChange} /></label></span>
                     <span>,&nbsp;&nbsp;</span>
                     <span><label>Show labels: <input type="checkbox" checked={this.state.showLabel} onChange={this.handleShowLabelChange} /></label></span>
                 </p>
                 <p>
-                    <span><button onClick={this.handleFineTune} disabled={this.state.fineTuning}>Fine tune</button></span>
-                    <span>,&nbsp;&nbsp;</span>
-                    <span><button onClick={this.handleShuffle} disabled={this.state.fineTuning}>Shuffle</button></span>
-                    <React.Fragment>
+                    <span><button onClick={this.handleFineTune} disabled={this.state.replaying}>Fine tune</button></span>
+                    <span>&nbsp;&nbsp;</span>
+                    <span><button onClick={this.handleShuffle} disabled={this.state.replaying}>Shuffle</button></span>
+                    <span>&nbsp;&nbsp;</span>
+                    {this.state.replaying && <React.Fragment>
                         <span>,&nbsp;&nbsp;</span>
-                        <span>Steps: {this.state.currentReplacementRow}/{this.state.replacementLog.length}</span>
+                        <span>Steps: {this.state.currentReplayRow}/{this.state.replacementLog.length}</span>
                         <span>,&nbsp;&nbsp;</span>
-                        <span>Total length: {this.state.totalLength.toFixed(2)}</span>
-                        {this.state.fineTuning && <React.Fragment>
-                            <span>,&nbsp;&nbsp;</span>
-                            <span>Animation speed: <button onClick={this.handleAnimationSpeedUp}>+</button>&nbsp;<button onClick={this.handleAnimationSpeedDown}>-</button></span>
-                        </React.Fragment>}
-                    </React.Fragment>
+                        <span>Animation speed: <button onClick={this.handleAnimationSpeedUp}>+</button>&nbsp;<button onClick={this.handleAnimationSpeedDown}>-</button></span>
+                    </React.Fragment>}
                 </p>
             </div>
-            <svg width={this.props.width} height={this.props.height} xmlns="http://www.w3.org/2000/svg">
-                <g>
-                    {this.renderInternalLines()}
-                    {this.renderReplacementAnimation()}
-                    {this.renderBoundingLines()}
-                    {this.state.showPoint && this.renderPoints()};
+            <div className="container">
+                <svg width={this.props.width} height={this.props.height} xmlns="http://www.w3.org/2000/svg">
+                    <g>
+                        {this.renderInternalLines()}
+                        {this.renderReplacementAnimation()}
+                        {this.renderBoundingLines()}
+                        {this.state.showPoint && this.renderPoints()};
                 </g>
-            </svg>
+                </svg>
+                <div>
+                    <p>Records:</p>
+                    {this.state.connectionSchemeRecords.map((item, index) => item.visible && <div key={index}>
+                        <span>&nbsp;&nbsp;</span>
+                        {this.state.activeRecordIndex === index ?
+                            <span>#{index.toString().padStart(5, '0')}</span> :
+                            <a href="#" onClick={this.handleRecordShow} data-tag={index}>#{index.toString().padStart(5, '0')}</a>}
+                        <span>&nbsp;(total length: {item.internalLineTotalLength.toFixed(2)})</span>
+                        <span>&nbsp;&nbsp;</span>
+                        {this.state.activeRecordIndex !== index && <button onClick={this.handleRecordDelete} data-tag={index}>X</button>}
+                    </div>)}
+                </div>
+            </div>
         </React.Fragment>;
     }
 }
