@@ -241,12 +241,36 @@ class Network {
         ];
     }
 
-    selectAdjacentPointPair(line) {
+    selectAdjacentLine(line) {
         const commonAdjacentPointList = [...this._adjacencyList[line[1]]].filter(i => this._adjacencyList[line[2]].has(i));
-        const pointList = [line[2], ...commonAdjacentPointList];
-        pointList.sort((a, b) => this.anticlockwise(line[1], a, b));
-        const pos = pointList.indexOf(line[2]);
-        return [pointList[(pos + pointList.length - 1) % pointList.length], pointList[(pos + 1) % pointList.length]];
+
+        let adjacentPointPair;
+        if (commonAdjacentPointList.length < 2) {
+            console.warn('Should not appear in theory, should continue to investigate');
+            return;
+        } else if (commonAdjacentPointList.length === 2) {
+            if (!this.intersectant(line[1], line[2], commonAdjacentPointList[0], commonAdjacentPointList[1])) {
+                return;
+            }
+            adjacentPointPair = commonAdjacentPointList;
+        } else {
+            const pointListPart1 = commonAdjacentPointList.filter(i => this.anticlockwise(line[1], line[2], i) > 0);
+            const pointListPart2 = commonAdjacentPointList.filter(i => this.anticlockwise(line[1], line[2], i) < 0);
+            if (pointListPart1.length === 0 || pointListPart2.length === 0) {
+                return;
+            }
+
+            pointListPart1.sort((a, b) => this.anticlockwise(line[1], a, b));
+            pointListPart2.sort((a, b) => this.anticlockwise(line[1], a, b));
+            adjacentPointPair = [pointListPart1.pop(), pointListPart2.shift()]
+
+            if (this.anticlockwise(adjacentPointPair[0], adjacentPointPair[1], line[1]) *
+                this.anticlockwise(adjacentPointPair[0], adjacentPointPair[1], line[2]) !== -1) {
+                return;
+            }
+        }
+
+        return [this.lineIndexFromEndpointIndex(...adjacentPointPair), ...adjacentPointPair];
     }
 
     fineTune() {
@@ -258,12 +282,10 @@ class Network {
             const line = lineQueue.shift();
             lineQueueIndexSet.delete(line[0]);
 
-            const adjacentPointPair = this.selectAdjacentPointPair(line);
-            if (!this.intersectant(line[1], line[2], adjacentPointPair[0], adjacentPointPair[1])) {
+            const diagonalLine = this.selectAdjacentLine(line);
+            if (!diagonalLine) {
                 continue;
             }
-
-            const diagonalLine = [this.lineIndexFromEndpointIndex(...adjacentPointPair), ...adjacentPointPair];
 
             const lineLength = this.distance(line[1], line[2]);
             const diagonalLineLength = this.distance(diagonalLine[1], diagonalLine[2]);
@@ -309,14 +331,12 @@ class Network {
 
         for (let k = 0; k < this._internalLineList.size;) {
             const randomIndex = this._randomNumberPool.next() % lineQueue.length;
-            const line = lineQueue.splice(randomIndex, 1)[0];
+            const line = lineQueue[randomIndex];
 
-            const adjacentPointPair = this.selectAdjacentPointPair(line);
-            if (!this.intersectant(line[1], line[2], adjacentPointPair[0], adjacentPointPair[1])) {
+            const diagonalLine = this.selectAdjacentLine(line);
+            if (!diagonalLine) {
                 continue;
             }
-
-            const diagonalLine = [this.lineIndexFromEndpointIndex(...adjacentPointPair), ...adjacentPointPair];
 
             const lineLength = this.distance(line[1], line[2]);
             const diagonalLineLength = this.distance(diagonalLine[1], diagonalLine[2]);
@@ -325,7 +345,7 @@ class Network {
             this.addInternalLine(diagonalLine[1], diagonalLine[2]);
             replacementLog.push([line[0], diagonalLine[0], diagonalLineLength - lineLength]);
 
-            lineQueue.push(diagonalLine);
+            lineQueue.splice(randomIndex, 1, diagonalLine);
 
             k++;
         }
