@@ -47,16 +47,21 @@ function convexHull(points) {
 }
 
 class PointBand {
+    static DatumPoints = [
+        { x: 0.0, y: 1.0 },
+        { x: -Math.sin(Math.PI * 2 / 3), y: -0.5 },
+        { x: Math.sin(Math.PI * 2 / 3), y: -0.5 }
+    ];
+
     constructor(originPoint) {
         this.originPoint = originPoint;
+
         this.points = [];
         this.circularLinkList = [];
-        this.radialLinkList = [];
-        this.headNode = undefined;
-    }
+        this.reversedCircularLinkList = [];
+        this.datumNodeReferences = [];
 
-    distance(nodeIndex) {
-        return distance(this.originPoint, this.points[nodeIndex]);
+        this.setupDatumPoint();
     }
 
     aligned(nodeIndex1, nodeIndex2) {
@@ -67,20 +72,12 @@ class PointBand {
         return anticlockwise(this.originPoint, this.points[nodeIndex1], this.points[nodeIndex2]);
     }
 
-    previousCircularLinkNode(nodeIndex) {
-        let i = nodeIndex;
-        while (this.circularLinkList[i] !== nodeIndex) {
-            i = this.circularLinkList[i];
+    setupDatumPoint() {
+        for (let i = 1; i <= PointBand.DatumPoints.length; i++) {
+            this.points[-i] = { x: this.originPoint.x + PointBand.DatumPoints[i - 1].x, y: this.originPoint.y + PointBand.DatumPoints[i - 1].y };
+            this.circularLinkList[-i] = (-i) % 3 - 1;
+            this.reversedCircularLinkList[(-i) % 3 - 1] = -i;
         }
-        return i;
-    }
-
-    previousRadialLinkNode(nodeIndex) {
-        let i = nodeIndex;
-        while (this.radialLinkList[i] !== nodeIndex) {
-            i = this.radialLinkList[i];
-        }
-        return i;
     }
 
     addNode(nodeIndex, point) {
@@ -90,49 +87,36 @@ class PointBand {
 
         this.points[nodeIndex] = point;
 
-        if (this.headNode === undefined) { //Empty link
-            this.circularLinkList[nodeIndex] = nodeIndex;
-            this.radialLinkList[nodeIndex] = nodeIndex;
-            this.headNode = nodeIndex;
-        } else {
-            for (let i = this.headNode; ; i = this.circularLinkList[i]) {
-                const j = this.circularLinkList[i];
+        for (let i = 1; i <= 3; i++) {
+            const direction = this.anticlockwise(-i, nodeIndex);
+            if (direction === 0 && this.aligned(-i, nodeIndex) > 0) {
+                this.datumNodeReferences[i] = nodeIndex;
+                this.circularLinkList[nodeIndex] = -i;
+                return;
+            } else if (direction > 0 && this.anticlockwise(nodeIndex, (-i) % 3 - 1) > 0) {
+                let j = -i;
+                while (j !== (-i) % 3 - 1) {
+                    const k = this.circularLinkList[j];
 
-                if (this.anticlockwise(j, nodeIndex) === 0 && this.aligned(j, nodeIndex) > 0) {
-                    const dis = this.distance(nodeIndex);
-
-                    if (dis < this.distance(j)) {
-                        this.radialLinkList[nodeIndex] = this.radialLinkList[j];
-                        this.radialLinkList[j] = nodeIndex;
-                        if (this.circularLinkList[j] === j) {
-                            this.circularLinkList[nodeIndex] = nodeIndex;
-                        } else {
-                            this.circularLinkList[nodeIndex] = this.circularLinkList[j];
-                            this.circularLinkList[i] = nodeIndex;
-                        }
-                        delete this.circularLinkList[j];
-                        this.headNode = nodeIndex;
-                    } else {
-                        for (let k = j; ; k = this.radialLinkList[k]) {
-                            if (dis >= this.distance(this.radialLinkList[k])) {
-                                this.radialLinkList[nodeIndex] = this.radialLinkList[k];
-                                this.radialLinkList[k] = nodeIndex;
-                                break;
-                            }
-                        }
+                    if (this.anticlockwise(j, nodeIndex) > 0 && this.anticlockwise(nodeIndex, k) > 0) {
+                        this.circularLinkList[nodeIndex] = k;
+                        this.circularLinkList[j] = nodeIndex;
+                        this.reversedCircularLinkList[nodeIndex] = j;
+                        this.reversedCircularLinkList[k] = nodeIndex;
+                        break;
                     }
 
-                    break;
-                } else if (this.anticlockwise(i, j) > 0 && this.anticlockwise(i, nodeIndex) > 0 && this.anticlockwise(nodeIndex, j) > 0 ||
-                    this.anticlockwise(i, j) <= 0 && (this.anticlockwise(i, nodeIndex) > 0 || this.anticlockwise(nodeIndex, j) > 0) ||
-                    i === j) {
-                    this.circularLinkList[nodeIndex] = j;
-                    this.circularLinkList[i] = nodeIndex;
-                    this.radialLinkList[nodeIndex] = nodeIndex;
-                    break;
+                    j = this.circularLinkList[j]
+                }
+
+                if (j !== (-i) % 3 - 1) {
+                    return;
                 }
             }
+
         }
+
+        throw "Unexpected.";
     }
 
     deleteNode(nodeIndex) {
@@ -140,62 +124,48 @@ class PointBand {
             throw "Invalid parameter.";
         }
 
-        if (this.circularLinkList[nodeIndex] !== undefined) {
-            if (this.radialLinkList[nodeIndex] === nodeIndex && this.circularLinkList[nodeIndex] === nodeIndex) {
-                this.headNode = undefined;
-            } else if (this.radialLinkList[nodeIndex] === nodeIndex) {
-                const i = this.previousCircularLinkNode(nodeIndex);
-                this.circularLinkList[i] = this.circularLinkList[nodeIndex];
-                if (this.headNode === nodeIndex) {
-                    this.headNode = i;
-                }
-            } else if (this.circularLinkList[nodeIndex] === nodeIndex) {
-                const i = this.previousRadialLinkNode(nodeIndex);
-                this.radialLinkList[i] = this.radialLinkList[nodeIndex];
-                this.circularLinkList[i] = i;
-                this.headNode = i;
-            } else {
-                const i = this.previousRadialLinkNode(nodeIndex);
-                this.radialLinkList[i] = this.radialLinkList[nodeIndex];
-                const j = this.previousCircularLinkNode(nodeIndex);
-                this.circularLinkList[i] = this.circularLinkList[nodeIndex];
-                this.circularLinkList[j] = i;
-                if (this.headNode === nodeIndex) {
-                    this.headNode = j;
-                }
-            }
-            delete this.circularLinkList[nodeIndex];
-            delete this.radialLinkList[nodeIndex];
+        const nextNodeIndex = this.circularLinkList[nodeIndex];
+
+        if (nextNodeIndex < 0 && this.datumNodeReferences[-nextNodeIndex] === nodeIndex) {
+            delete this.datumNodeReferences[-nextNodeIndex];
         } else {
-            const i = this.previousRadialLinkNode(nodeIndex);
-            this.radialLinkList[i] = this.radialLinkList[nodeIndex];
-            delete this.radialLinkList[nodeIndex];
+            const preNodeIndex = this.reversedCircularLinkList[nodeIndex];
+
+            this.circularLinkList[preNodeIndex] = nextNodeIndex;
+            this.reversedCircularLinkList[nextNodeIndex] = preNodeIndex;
+            delete this.reversedCircularLinkList[nodeIndex];
         }
 
+        delete this.circularLinkList[nodeIndex];
         delete this.points[nodeIndex];
     }
 
-    getClockwiseNodes(sourceNodeIndex, count) {
-        if (!this.points[sourceNodeIndex] === undefined) {
+    getAheadNodes(startNodeIndex, count) {
+        if (!this.points[startNodeIndex] === undefined) {
             throw "Invalid parameter.";
         }
 
-        const points = [];
-        let nodeIndex = sourceNodeIndex;
+        const pointList = [];
 
-        while (points.length < count && this.circularLinkList[nodeIndex] === undefined) {
-            points.push(this.radialLinkList[nodeIndex]);
-            nodeIndex = this.radialLinkList[nodeIndex];
-        }
-
-        const originNodeIndex = nodeIndex;
-        nodeIndex = this.circularLinkList[nodeIndex];
-        while (points.length < count && nodeIndex !== originNodeIndex) {
-            points.push(nodeIndex);
+        let nodeIndex = this.circularLinkList[startNodeIndex];
+        if (nodeIndex < 0 && this.datumNodeReferences[-nodeIndex] === startNodeIndex) {
+            startNodeIndex = nodeIndex;
             nodeIndex = this.circularLinkList[nodeIndex];
         }
 
-        return points;
+        while (pointList.length < count && nodeIndex !== startNodeIndex) {
+            if (nodeIndex < 0) {
+                const referredNodeIndex = this.datumNodeReferences[-nodeIndex];
+                if (referredNodeIndex !== undefined) {
+                    pointList.push(referredNodeIndex);
+                }
+            } else {
+                pointList.push(nodeIndex);
+            }
+            nodeIndex = this.circularLinkList[nodeIndex];
+        }
+
+        return pointList;
     }
 }
 
@@ -404,7 +374,7 @@ class Network {
             }
 
             if (i === outerPointList.length) {
-                console.warn('ATTENTION');
+                throw "Unexpected.";
             }
 
             const range = this.tangentRange(innerPointList, outerPointList[i]);
@@ -417,7 +387,7 @@ class Network {
                     this.addSegment(outerPointList[i], innerPointList[j % innerPointList.length]);
                 }
             } else {
-                console.warn('ATTENTION');
+                throw "Unexpected.";
             }
 
             const scope = [range[1], range[0]];
@@ -470,8 +440,8 @@ class Network {
         for (const side of sides) {
             if (side === 4) {
 
-                const clockwisePointList0 = this._adjacencyList[segment[0]].getClockwiseNodes(segment[1], 1);
-                const clockwisePointList1 = this._adjacencyList[segment[1]].getClockwiseNodes(segment[0], 1);
+                const clockwisePointList0 = this._adjacencyList[segment[0]].getAheadNodes(segment[1], 1);
+                const clockwisePointList1 = this._adjacencyList[segment[1]].getAheadNodes(segment[0], 1);
 
                 const pointList = [
                     segment[0],
