@@ -15,27 +15,198 @@ class RandomNumberPool {
     }
 }
 
+function indexFromParameters(index1, index2, orderInsensitive = false) {
+    if (orderInsensitive) {
+        if (index1 > index2) {
+            [index1, index2] = [index2, index1];
+        }
+    }
+    return (index1 + index2) * (index1 + index2 + 1) / 2 + index1;
+}
+
 function distance(p1, p2) {
     return Math.sqrt((p1.x - p2.x) * (p1.x - p2.x) + (p1.y - p2.y) * (p1.y - p2.y));
+}
+
+function aligned(p1, p2, p3) {
+    return Math.sign((p2.x - p1.x) * (p3.x - p1.x) + (p2.y - p1.y) * (p3.y - p1.y));
 }
 
 function anticlockwise(p1, p2, p3) {
     return Math.sign((p2.x - p1.x) * (p3.y - p1.y) - (p3.x - p1.x) * (p2.y - p1.y));
 }
 
-function intersectant(p1, p2, p3, p4) {
-    return anticlockwise(p1, p2, p3) * anticlockwise(p1, p2, p4) === -1
-        && anticlockwise(p3, p4, p1) * anticlockwise(p3, p4, p2) === -1;
+function convexHull(points) {
+    for (let i = 0; i < points.length; i++) {
+        if (anticlockwise(points[i], points[(i + 1) % points.length], points[(i + 2) % points.length]) !== 1) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+class PointBand {
+    constructor(originPoint) {
+        this.originPoint = originPoint;
+        this.points = [];
+        this.circularLinkList = [];
+        this.radialLinkList = [];
+        this.headNode = undefined;
+    }
+
+    distance(nodeIndex) {
+        return distance(this.originPoint, this.points[nodeIndex]);
+    }
+
+    aligned(nodeIndex1, nodeIndex2) {
+        return aligned(this.originPoint, this.points[nodeIndex1], this.points[nodeIndex2]);
+    }
+
+    anticlockwise(nodeIndex1, nodeIndex2) {
+        return anticlockwise(this.originPoint, this.points[nodeIndex1], this.points[nodeIndex2]);
+    }
+
+    previousCircularLinkNode(nodeIndex) {
+        let i = nodeIndex;
+        while (this.circularLinkList[i] !== nodeIndex) {
+            i = this.circularLinkList[i];
+        }
+        return i;
+    }
+
+    previousRadialLinkNode(nodeIndex) {
+        let i = nodeIndex;
+        while (this.radialLinkList[i] !== nodeIndex) {
+            i = this.radialLinkList[i];
+        }
+        return i;
+    }
+
+    addNode(nodeIndex, point) {
+        if (this.points[nodeIndex] !== undefined) {
+            throw "Invalid parameter.";
+        }
+
+        this.points[nodeIndex] = point;
+
+        if (this.headNode === undefined) { //Empty link
+            this.circularLinkList[nodeIndex] = nodeIndex;
+            this.radialLinkList[nodeIndex] = nodeIndex;
+            this.headNode = nodeIndex;
+        } else {
+            for (let i = this.headNode; ; i = this.circularLinkList[i]) {
+                const j = this.circularLinkList[i];
+
+                if (this.anticlockwise(j, nodeIndex) === 0 && this.aligned(j, nodeIndex) > 0) {
+                    const dis = this.distance(nodeIndex);
+
+                    if (dis < this.distance(j)) {
+                        this.radialLinkList[nodeIndex] = this.radialLinkList[j];
+                        this.radialLinkList[j] = nodeIndex;
+                        if (this.circularLinkList[j] === j) {
+                            this.circularLinkList[nodeIndex] = nodeIndex;
+                        } else {
+                            this.circularLinkList[nodeIndex] = this.circularLinkList[j];
+                            this.circularLinkList[i] = nodeIndex;
+                        }
+                        delete this.circularLinkList[j];
+                        this.headNode = nodeIndex;
+                    } else {
+                        for (let k = j; ; k = this.radialLinkList[k]) {
+                            if (dis >= this.distance(this.radialLinkList[k])) {
+                                this.radialLinkList[nodeIndex] = this.radialLinkList[k];
+                                this.radialLinkList[k] = nodeIndex;
+                                break;
+                            }
+                        }
+                    }
+
+                    break;
+                } else if (this.anticlockwise(i, j) > 0 && this.anticlockwise(i, nodeIndex) > 0 && this.anticlockwise(nodeIndex, j) > 0 ||
+                    this.anticlockwise(i, j) <= 0 && (this.anticlockwise(i, nodeIndex) > 0 || this.anticlockwise(nodeIndex, j) > 0) ||
+                    i === j) {
+                    this.circularLinkList[nodeIndex] = j;
+                    this.circularLinkList[i] = nodeIndex;
+                    this.radialLinkList[nodeIndex] = nodeIndex;
+                    break;
+                }
+            }
+        }
+    }
+
+    deleteNode(nodeIndex) {
+        if (this.points[nodeIndex] === undefined) {
+            throw "Invalid parameter.";
+        }
+
+        if (this.circularLinkList[nodeIndex] !== undefined) {
+            if (this.radialLinkList[nodeIndex] === nodeIndex && this.circularLinkList[nodeIndex] === nodeIndex) {
+                this.headNode = undefined;
+            } else if (this.radialLinkList[nodeIndex] === nodeIndex) {
+                const i = this.previousCircularLinkNode(nodeIndex);
+                this.circularLinkList[i] = this.circularLinkList[nodeIndex];
+                if (this.headNode === nodeIndex) {
+                    this.headNode = i;
+                }
+            } else if (this.circularLinkList[nodeIndex] === nodeIndex) {
+                const i = this.previousRadialLinkNode(nodeIndex);
+                this.radialLinkList[i] = this.radialLinkList[nodeIndex];
+                this.circularLinkList[i] = i;
+                this.headNode = i;
+            } else {
+                const i = this.previousRadialLinkNode(nodeIndex);
+                this.radialLinkList[i] = this.radialLinkList[nodeIndex];
+                const j = this.previousCircularLinkNode(nodeIndex);
+                this.circularLinkList[i] = this.circularLinkList[nodeIndex];
+                this.circularLinkList[j] = i;
+                if (this.headNode === nodeIndex) {
+                    this.headNode = j;
+                }
+            }
+            delete this.circularLinkList[nodeIndex];
+            delete this.radialLinkList[nodeIndex];
+        } else {
+            const i = this.previousRadialLinkNode(nodeIndex);
+            this.radialLinkList[i] = this.radialLinkList[nodeIndex];
+            delete this.radialLinkList[nodeIndex];
+        }
+
+        delete this.points[nodeIndex];
+    }
+
+    getClockwiseNodes(sourceNodeIndex, count) {
+        if (!this.points[sourceNodeIndex] === undefined) {
+            throw "Invalid parameter.";
+        }
+
+        const points = [];
+        let nodeIndex = sourceNodeIndex;
+
+        while (points.length < count && this.circularLinkList[nodeIndex] === undefined) {
+            points.push(this.radialLinkList[nodeIndex]);
+            nodeIndex = this.radialLinkList[nodeIndex];
+        }
+
+        const originNodeIndex = nodeIndex;
+        nodeIndex = this.circularLinkList[nodeIndex];
+        while (points.length < count && nodeIndex !== originNodeIndex) {
+            points.push(nodeIndex);
+            nodeIndex = this.circularLinkList[nodeIndex];
+        }
+
+        return points;
+    }
 }
 
 class Network {
     constructor(width, height, pointNumber) {
         this._randomNumberPool = new RandomNumberPool();
         this._points = this.generatePoints(width, height, pointNumber);
-        this._lines = new Map();
-        this._boundingLineList = new Set();
-        this._internalLineList = new Set();
-        this._adjacencyList = Array.from({ length: pointNumber }, () => new Set());
+        this._segments = [];
+        this._boundingSegmentList = new Set();
+        this._internalSegmentList = new Set();
+        this._adjacencyList = this._points.map((point, i) => new PointBand(point, i));
     }
 
     distance(index1, index2) {
@@ -46,57 +217,71 @@ class Network {
         return anticlockwise(this._points[index1], this._points[index2], this._points[index3]);
     }
 
-    intersectant(index1, index2, index3, index4) {
-        return intersectant(this._points[index1], this._points[index2], this._points[index3], this._points[index4]);
+    convexHull(indexes) {
+        return convexHull(indexes.map(i => this._points[i]));
     }
 
-    lineIndexFromEndpointIndex(index1, index2) {
-        return (index1 + index2) * (index1 + index2 + 1) / 2 + Math.min(index1, index2);
+    totalLength(segmentList) {
+        return segmentList.reduce((length, index) => length + this.distance(...this._segments[index]), 0.0);
     }
 
-    totalLength(lineList) {
-        return lineList.reduce((length, lineIndex) => {
-            const line = this._lines.get(lineIndex);
-            return length + this.distance(line[0], line[1]);
-        }, 0.0);
+    segmentIndex(index1, index2) {
+        return indexFromParameters(index1, index2, true);
     }
 
-    addBoundingLine(pointIndex1, pointIndex2) {
-        const lineIndex = this.lineIndexFromEndpointIndex(pointIndex1, pointIndex2);
-        this._lines.set(lineIndex, [pointIndex1, pointIndex2]);
-        this._boundingLineList.add(lineIndex);
-        this._adjacencyList[pointIndex1].add(pointIndex2);
-        this._adjacencyList[pointIndex2].add(pointIndex1);
+    addSegment(pointIndex1, pointIndex2, bounding = false) {
+        const segmentIndex = this.segmentIndex(pointIndex1, pointIndex2);
+        this._segments[segmentIndex] = [pointIndex1, pointIndex2];
+        if (bounding) {
+            this._boundingSegmentList.add(segmentIndex);
+        } else {
+            this._internalSegmentList.add(segmentIndex);
+        }
+        this._adjacencyList[pointIndex1].addNode(pointIndex2, this._points[pointIndex2]);
+        this._adjacencyList[pointIndex2].addNode(pointIndex1, this._points[pointIndex1]);
     }
 
-    addInternalLine(pointIndex1, pointIndex2) {
-        const lineIndex = this.lineIndexFromEndpointIndex(pointIndex1, pointIndex2);
-        this._lines.set(lineIndex, [pointIndex1, pointIndex2]);
-        this._internalLineList.add(lineIndex);
-        this._adjacencyList[pointIndex1].add(pointIndex2);
-        this._adjacencyList[pointIndex2].add(pointIndex1);
-    }
-
-    deleteInternalLine(pointIndex1, pointIndex2) {
-        const lineIndex = this.lineIndexFromEndpointIndex(pointIndex1, pointIndex2);
-        this._internalLineList.delete(lineIndex);
-        this._adjacencyList[pointIndex1].delete(pointIndex2);
-        this._adjacencyList[pointIndex2].delete(pointIndex1);
+    deleteSegment(pointIndex1, pointIndex2) {
+        const segmentIndex = this.segmentIndex(pointIndex1, pointIndex2);
+        this._adjacencyList[pointIndex1].deleteNode(pointIndex2);
+        this._adjacencyList[pointIndex2].deleteNode(pointIndex1);
+        this._internalSegmentList.delete(segmentIndex);
     }
 
     generatePoints(width, height, pointNumber) {
+        const points = [];
+
         const center = { x: width / 2, y: height / 2 };
         const radius2 = Math.pow(Math.min(width / 2, height / 2), 2);
 
-        const points = [];
+        const pointList = new Set();
         while (points.length < pointNumber) {
-            const point = {
-                x: this._randomNumberPool.next() % width,
-                y: this._randomNumberPool.next() % height
-            };
-            if ((point.x - center.x) * (point.x - center.x) + (point.y - center.y) * (point.y - center.y) < radius2) {
-                points.push(point);
+            let x = this._randomNumberPool.next() % width;
+            let y = this._randomNumberPool.next() % height;
+
+            if ((x - center.x) * (x - center.x) + (y - center.y) * (y - center.y) > radius2) {
+                continue;
             }
+
+            const pointIndex = indexFromParameters(Math.floor(x / 16), Math.floor(y / 16));
+            if (pointList.has(pointIndex)) {
+                continue;
+            }
+
+            if (x % 16 < 4) {
+                x += 4;
+            } else if (x % 16 >= 12) {
+                x -= 4;
+            }
+
+            if (y % 16 < 4) {
+                y += 4;
+            } else if (y % 16 >= 12) {
+                y -= 4;
+            }
+
+            points.push({ x, y });
+            pointList.add(pointIndex);
         }
 
         return points;
@@ -130,58 +315,54 @@ class Network {
         return [range[0] % pointList.length, range[1] % pointList.length];
     }
 
-    findBoundingPolygon(pointList) {
+    findBoundingConvexHull(pointList) {
         const bounding = pointList.length === this._points.length;
         if (pointList.length < 3) {
             return [pointList, []];
         }
         const availablePointList = new Set(pointList);
-        const boundingPolygonPointList = this.normalizeTriangle(pointList.splice(0, 3));
+        const boundingConvexHullPointList = this.normalizeTriangle(pointList.splice(0, 3));
         while (pointList.length !== 0) {
             const pointIndex = pointList.shift();
-            const range = this.tangentRange(boundingPolygonPointList, pointIndex);
+            const range = this.tangentRange(boundingConvexHullPointList, pointIndex);
             if (range[0] < range[1]) {
-                boundingPolygonPointList.splice(range[0] + 1, range[1] - range[0] - 1, pointIndex);
+                boundingConvexHullPointList.splice(range[0] + 1, range[1] - range[0] - 1, pointIndex);
             } else if (range[0] > range[1]) {
-                boundingPolygonPointList.splice(range[0] + 1);
-                boundingPolygonPointList.splice(0, range[1], pointIndex);
+                boundingConvexHullPointList.splice(range[0] + 1);
+                boundingConvexHullPointList.splice(0, range[1], pointIndex);
             }
         }
 
-        for (let i = 0; i < boundingPolygonPointList.length; i++) {
-            if (bounding) {
-                this.addBoundingLine(boundingPolygonPointList[i], boundingPolygonPointList[(i + 1) % boundingPolygonPointList.length]);
-            } else {
-                this.addInternalLine(boundingPolygonPointList[i], boundingPolygonPointList[(i + 1) % boundingPolygonPointList.length]);
-            }
-            availablePointList.delete(boundingPolygonPointList[i]);
+        for (let i = 0; i < boundingConvexHullPointList.length; i++) {
+            this.addSegment(boundingConvexHullPointList[i], boundingConvexHullPointList[(i + 1) % boundingConvexHullPointList.length], bounding);
+            availablePointList.delete(boundingConvexHullPointList[i]);
         }
-        return [boundingPolygonPointList, Array.from(availablePointList)];
+        return [boundingConvexHullPointList, Array.from(availablePointList)];
     }
 
-    connectPolygons(outerPointList, innerPointList) {
+    connectConvexHulls(outerPointList, innerPointList) {
         if (innerPointList.length === 0) {
             if (outerPointList.length > 3) {
                 for (let i = 2; i < outerPointList.length - 1; i++) {
-                    this.addInternalLine(outerPointList[0], outerPointList[i], 0);
+                    this.addSegment(outerPointList[0], outerPointList[i]);
                 }
             }
         } else if (innerPointList.length === 1) {
             for (const pointIndex of outerPointList) {
-                this.addInternalLine(pointIndex, innerPointList[0], 0);
+                this.addSegment(pointIndex, innerPointList[0]);
             }
         } else if (innerPointList.length === 2) {
             const baseTrianglePointList = this.normalizeTriangle([outerPointList[0], innerPointList[0], innerPointList[1]]);
-            this.addInternalLine(baseTrianglePointList[0], baseTrianglePointList[1], 0);
-            this.addInternalLine(baseTrianglePointList[1], baseTrianglePointList[2], 0);
-            this.addInternalLine(baseTrianglePointList[2], baseTrianglePointList[0], 0);
+            this.addSegment(baseTrianglePointList[0], baseTrianglePointList[1]);
+            this.addSegment(baseTrianglePointList[1], baseTrianglePointList[2]);
+            this.addSegment(baseTrianglePointList[2], baseTrianglePointList[0]);
             for (let i = 1, j = 1; i < outerPointList.length; i++) {
                 const range = this.tangentRange(baseTrianglePointList, outerPointList[i], [j, 2]);
                 if (range[0] === range[1]) {
-                    this.addInternalLine(outerPointList[i], baseTrianglePointList[j], 0);
+                    this.addSegment(outerPointList[i], baseTrianglePointList[j]);
                 } else {
-                    this.addInternalLine(outerPointList[i], baseTrianglePointList[j], 0);
-                    this.addInternalLine(outerPointList[i], baseTrianglePointList[j + 1], 0);
+                    this.addSegment(outerPointList[i], baseTrianglePointList[j]);
+                    this.addSegment(outerPointList[i], baseTrianglePointList[j + 1]);
                     j += 1;
                 }
             }
@@ -189,11 +370,11 @@ class Network {
             const range = this.tangentRange(innerPointList, outerPointList[0]);
             if (range[0] < range[1]) {
                 for (let j = range[0]; j <= range[1]; j++) {
-                    this.addInternalLine(outerPointList[0], innerPointList[j], 0);
+                    this.addSegment(outerPointList[0], innerPointList[j]);
                 }
             } else {
                 for (let j = range[0]; j <= range[1] + innerPointList.length; j++) {
-                    this.addInternalLine(outerPointList[0], innerPointList[j % innerPointList.length], 0);
+                    this.addSegment(outerPointList[0], innerPointList[j % innerPointList.length]);
                 }
             }
 
@@ -201,15 +382,15 @@ class Network {
             for (let i = 1; i < outerPointList.length; i++) {
                 const range = this.tangentRange(innerPointList, outerPointList[i], scope);
                 if (range[0] === range[1]) {
-                    this.addInternalLine(outerPointList[i], innerPointList[scope[0]], 0);
+                    this.addSegment(outerPointList[i], innerPointList[scope[0]]);
                 } else {
                     if (range[0] < range[1]) {
                         for (let j = range[0]; j <= range[1]; j++) {
-                            this.addInternalLine(outerPointList[i], innerPointList[j], 0);
+                            this.addSegment(outerPointList[i], innerPointList[j]);
                         }
                     } else {
                         for (let j = range[0]; j <= range[1] + innerPointList.length; j++) {
-                            this.addInternalLine(outerPointList[i], innerPointList[j % innerPointList.length], 0);
+                            this.addSegment(outerPointList[i], innerPointList[j % innerPointList.length]);
                         }
                     }
                     scope[0] = range[1];
@@ -219,153 +400,180 @@ class Network {
     }
 
     buildConnectionSchemeInternal(pointList) {
-        const [outerPolygonPointList, restPointList] = this.findBoundingPolygon(pointList);
+        const [convexHullPointList, restPointList] = this.findBoundingConvexHull(pointList);
         if (restPointList.length >= 3) {
-            const innerPolygonPointList = this.buildConnectionSchemeInternal(restPointList);
-            this.connectPolygons(outerPolygonPointList, innerPolygonPointList);
+            const innerConvexHullPointList = this.buildConnectionSchemeInternal(restPointList);
+            this.connectConvexHulls(convexHullPointList, innerConvexHullPointList);
         } else {
-            this.connectPolygons(outerPolygonPointList, restPointList);
+            this.connectConvexHulls(convexHullPointList, restPointList);
         }
 
-        return outerPolygonPointList;
+        return convexHullPointList;
     }
 
     buildConnectionScheme() {
         this.buildConnectionSchemeInternal([...this._points.keys()]);
-        const internalLineList = [...this._internalLineList];
-        const internalLineTotalLength = this.totalLength(internalLineList);
+        const internalSegmentList = [...this._internalSegmentList];
+        const internalSegmentTotalLength = this.totalLength(internalSegmentList);
         return [
-            [...this._boundingLineList],
-            internalLineList,
-            internalLineTotalLength
+            [...this._boundingSegmentList],
+            internalSegmentList,
+            internalSegmentTotalLength
         ];
     }
 
-    selectAdjacentLine(line) {
-        const commonAdjacentPointList = [...this._adjacencyList[line[1]]].filter(i => this._adjacencyList[line[2]].has(i));
+    selectConvexHulls(segment, sides) {
+        const convexHulls = [];
+        for (const side of sides) {
+            if (side === 4) {
 
-        let adjacentPointPair;
-        if (commonAdjacentPointList.length < 2) {
-            console.warn('Should not appear in theory, should continue to investigate');
-            return;
-        } else if (commonAdjacentPointList.length === 2) {
-            if (!this.intersectant(line[1], line[2], commonAdjacentPointList[0], commonAdjacentPointList[1])) {
-                return;
-            }
-            adjacentPointPair = commonAdjacentPointList;
-        } else {
-            const pointListPart1 = commonAdjacentPointList.filter(i => this.anticlockwise(line[1], line[2], i) > 0);
-            const pointListPart2 = commonAdjacentPointList.filter(i => this.anticlockwise(line[1], line[2], i) < 0);
-            if (pointListPart1.length === 0 || pointListPart2.length === 0) {
-                return;
-            }
+                const clockwisePointList0 = this._adjacencyList[segment[0]].getClockwiseNodes(segment[1], 1);
+                const clockwisePointList1 = this._adjacencyList[segment[1]].getClockwiseNodes(segment[0], 1);
 
-            pointListPart1.sort((a, b) => this.anticlockwise(line[1], a, b));
-            pointListPart2.sort((a, b) => this.anticlockwise(line[1], a, b));
-            adjacentPointPair = [pointListPart1.pop(), pointListPart2.shift()]
+                const pointList = [
+                    segment[0],
+                    clockwisePointList1[0],
+                    segment[1],
+                    clockwisePointList0[0]
+                ];
 
-            if (this.anticlockwise(adjacentPointPair[0], adjacentPointPair[1], line[1]) *
-                this.anticlockwise(adjacentPointPair[0], adjacentPointPair[1], line[2]) !== -1) {
-                return;
-            }
-        }
-
-        return [this.lineIndexFromEndpointIndex(...adjacentPointPair), ...adjacentPointPair];
-    }
-
-    fineTune() {
-        const lineQueue = [...this._internalLineList.values()].map(i => [i, this._lines.get(i)]).map(i => [i[0], i[1][0], i[1][1]]);
-        const lineQueueIndexSet = new Set(this._internalLineList);
-        const replacementLog = [];
-
-        while (lineQueue.length !== 0) {
-            const line = lineQueue.shift();
-            lineQueueIndexSet.delete(line[0]);
-
-            const diagonalLine = this.selectAdjacentLine(line);
-            if (!diagonalLine) {
-                continue;
-            }
-
-            const lineLength = this.distance(line[1], line[2]);
-            const diagonalLineLength = this.distance(diagonalLine[1], diagonalLine[2]);
-
-            if (lineLength <= diagonalLineLength) {
-                continue;
-            }
-
-            this.deleteInternalLine(line[1], line[2]);
-            this.addInternalLine(diagonalLine[1], diagonalLine[2]);
-            replacementLog.push([line[0], diagonalLine[0], diagonalLineLength - lineLength]);
-
-            //add influenced lines
-            const influencedLines = [
-                [line[1], diagonalLine[1]],
-                [line[1], diagonalLine[2]],
-                [line[2], diagonalLine[1]],
-                [line[2], diagonalLine[2]]
-            ].map(i => [this.lineIndexFromEndpointIndex(...i), ...i]);
-
-            for (const influencedLine of influencedLines) {
-                if (this._boundingLineList.has(influencedLine[0]) || lineQueueIndexSet.has(influencedLine[0])) {
+                if (!this.convexHull(pointList)) {
                     continue;
                 }
 
-                lineQueue.push(influencedLine);
-                lineQueueIndexSet.add(influencedLine[0]);
+                convexHulls.push({
+                    pointList,
+                    segments: [segment]
+                });
+            }
+        }
+        return convexHulls;
+    }
+
+    fineTuneConvexHull(convexHull) {
+        const replacementLog = [];
+        const influencedSegmentList = [];
+        if (convexHull.pointList.length === 4) {
+            let segment1 = [convexHull.pointList[0], convexHull.pointList[2]];
+            let segment2 = [convexHull.pointList[1], convexHull.pointList[3]];
+            const distance1 = this.distance(...segment1);
+            const distance2 = this.distance(...segment2);
+            if (distance1 < distance2) {
+                [segment1, segment2] = [segment2, segment1];
+            }
+
+            if (this.segmentIndex(...convexHull.segments[0]) === this.segmentIndex(...segment1)) {
+                this.deleteSegment(...segment1);
+                this.addSegment(...segment2);
+                replacementLog.push([
+                    this.segmentIndex(...segment1),
+                    this.segmentIndex(...segment2),
+                    distance2 - distance1
+                ]);
+
+                influencedSegmentList.push(...[
+                    [convexHull.pointList[0], convexHull.pointList[1]],
+                    [convexHull.pointList[1], convexHull.pointList[2]],
+                    [convexHull.pointList[2], convexHull.pointList[3]],
+                    [convexHull.pointList[3], convexHull.pointList[0]]
+                ].map(segment => this.segmentIndex(...segment)));
+            }
+        }
+        return [replacementLog, influencedSegmentList];
+    }
+
+    shuffleConvexHull(convexHull) {
+        const replacementLog = [];
+        if (convexHull.pointList.length === 4) {
+            let segment1 = [convexHull.pointList[0], convexHull.pointList[2]];
+            let segment2 = [convexHull.pointList[1], convexHull.pointList[3]];
+            const distance1 = this.distance(...segment1);
+            const distance2 = this.distance(...segment2);
+            if (this.segmentIndex(...convexHull.segments[0]) === this.segmentIndex(...segment2)) {
+                [segment1, segment2] = [segment2, segment1];
+            }
+
+            this.deleteSegment(...segment1);
+            this.addSegment(...segment2);
+            replacementLog.push([
+                this.segmentIndex(...segment1),
+                this.segmentIndex(...segment2),
+                distance2 - distance1
+            ]);
+        }
+        return replacementLog;
+    }
+
+    fineTune() {
+        const segmentQueue = [...this._internalSegmentList.values()];
+        const segmentIndexSet = new Set(this._internalSegmentList);
+        const replacementLog = [];
+
+        while (segmentQueue.length !== 0) {
+            const segmentIndex = segmentQueue.shift();
+            const segment = this._segments[segmentIndex];
+            segmentIndexSet.delete(segmentIndex);
+
+            const convexHulls = this.selectConvexHulls(segment, [4]);
+            for (const convexHull of convexHulls) {
+                const [replacementLogFragment, influencedSegmentList] = this.fineTuneConvexHull(convexHull);
+                replacementLog.push(...replacementLogFragment);
+                for (const influencedSegmentIndex of influencedSegmentList) {
+                    if (this._boundingSegmentList.has(influencedSegmentIndex) || segmentIndexSet.has(influencedSegmentIndex)) {
+                        continue;
+                    }
+
+                    segmentQueue.push(influencedSegmentIndex);
+                    segmentIndexSet.add(influencedSegmentIndex);
+                }
             }
         }
 
-        const internalLineList = [...this._internalLineList];
-        const internalLineTotalLength = this.totalLength(internalLineList);
+        const internalSegmentList = [...this._internalSegmentList];
+        const internalSegmentTotalLength = this.totalLength(internalSegmentList);
 
         return [
             replacementLog,
-            internalLineList,
-            internalLineTotalLength];
+            internalSegmentList,
+            internalSegmentTotalLength];
     }
 
     shuffle() {
-        const lineQueue = [...this._internalLineList.values()].map(i => [i, this._lines.get(i)]).map(i => [i[0], i[1][0], i[1][1]]);
+        const segmentQueue = [...this._internalSegmentList.values()];
         const replacementLog = [];
 
-        for (let k = 0; k < this._internalLineList.size;) {
-            const randomIndex = this._randomNumberPool.next() % lineQueue.length;
-            const line = lineQueue[randomIndex];
+        for (let k = 0; k < this._internalSegmentList.size;) {
+            const randomIndex = this._randomNumberPool.next() % segmentQueue.length;
+            const segmentIndex = segmentQueue[randomIndex];
+            const segment = this._segments[segmentIndex];
 
-            const diagonalLine = this.selectAdjacentLine(line);
-            if (!diagonalLine) {
-                continue;
+            const convexHulls = this.selectConvexHulls(segment, [4]);
+            for (const convexHull of convexHulls) {
+                const replacementLogFragment = this.shuffleConvexHull(convexHull);
+                replacementLog.push(...replacementLogFragment);
+
+                for (const replacement of replacementLogFragment) {
+                    segmentQueue.splice(randomIndex, 1, replacement[1]);
+                    k++;
+                }
             }
-
-            const lineLength = this.distance(line[1], line[2]);
-            const diagonalLineLength = this.distance(diagonalLine[1], diagonalLine[2]);
-
-            this.deleteInternalLine(line[1], line[2]);
-            this.addInternalLine(diagonalLine[1], diagonalLine[2]);
-            replacementLog.push([line[0], diagonalLine[0], diagonalLineLength - lineLength]);
-
-            lineQueue.splice(randomIndex, 1, diagonalLine);
-
-            k++;
         }
 
-        const internalLineList = [...this._internalLineList];
-        const internalLineTotalLength = this.totalLength(internalLineList);
+        const internalSegmentList = [...this._internalSegmentList];
+        const internalSegmentTotalLength = this.totalLength(internalSegmentList);
 
         return [
             replacementLog,
-            internalLineList,
-            internalLineTotalLength];
+            internalSegmentList,
+            internalSegmentTotalLength];
     }
 
     points() {
         return [...this._points];
     }
 
-    getLine(lineIndex) {
-        const pointList = this._lines.get(lineIndex);
-        return pointList.map(i => this._points[i]);
+    getSegment(segmentIndex) {
+        return this._segments[segmentIndex].map(i => this._points[i]);
     }
 }
 
@@ -616,9 +824,10 @@ class App extends React.Component {
 
     renderBoundingLines() {
         return this.state.boundingLineList.map(lineIndex => {
-            const line = this.network.getLine(lineIndex);
+            const line = this.network.getSegment(lineIndex);
             return <React.Fragment key={lineIndex}>
                 <line x1={line[0].x} y1={this.props.height - line[0].y} x2={line[1].x} y2={this.props.height - line[1].y} stroke="black" strokeWidth="1.5" />
+                {this.state.showLabel && <text x={(line[0].x + line[1].x) / 2} y={this.props.height - (line[0].y + line[1].y) / 2} stroke="blue">{lineIndex}</text>}
             </React.Fragment>;
         });
     }
@@ -626,18 +835,18 @@ class App extends React.Component {
     renderInternalLines() {
         return [...this.state.internalLineList]
             .map(lineIndex => {
-                const line = this.network.getLine(lineIndex);
+                const line = this.network.getSegment(lineIndex);
                 return <React.Fragment key={lineIndex}>
                     <line x1={line[0].x} y1={this.props.height - line[0].y} x2={line[1].x} y2={this.props.height - line[1].y} stroke="silver" strokeWidth="1.5" />
-                    {this.state.showLabel && <text x={(line[0].x + line[1].x) / 2} y={this.props.height - (line[0].y + line[1].y) / 2} stroke="blue" fill="white">{lineIndex}</text>}
+                    {this.state.showLabel && <text x={(line[0].x + line[1].x) / 2} y={this.props.height - (line[0].y + line[1].y) / 2} stroke="blue">{lineIndex}</text>}
                 </React.Fragment>;
             });
     }
 
     renderReplacementAnimation() {
         if (this.state.replaying) {
-            const oldLine = this.network.getLine(this.state.replacementLog[this.state.currentReplayRow][0]);
-            const newLine = this.network.getLine(this.state.replacementLog[this.state.currentReplayRow][1]);
+            const oldLine = this.network.getSegment(this.state.replacementLog[this.state.currentReplayRow][0]);
+            const newLine = this.network.getSegment(this.state.replacementLog[this.state.currentReplayRow][1]);
             return <React.Fragment>
                 <polygon
                     points={`${oldLine[0].x},${this.props.height - oldLine[0].y} ${newLine[0].x},${this.props.height - newLine[0].y} ${oldLine[1].x},${this.props.height - oldLine[1].y} ${newLine[1].x},${this.props.height - newLine[1].y}`}
@@ -657,7 +866,7 @@ class App extends React.Component {
     renderPoints() {
         return this.state.points.map((point, pointIndex) => <React.Fragment key={pointIndex}>
             <circle cx={point.x} cy={this.props.height - point.y} r="3" fill="red" />
-            {this.state.showLabel && <text x={point.x} y={this.props.height - point.y} stroke="brown" fill="white">{pointIndex}</text>}
+            {this.state.showLabel && <text x={point.x} y={this.props.height - point.y} stroke="brown">{pointIndex}</text>}
         </React.Fragment>);
     }
 
