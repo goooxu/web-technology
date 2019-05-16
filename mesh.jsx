@@ -213,6 +213,10 @@ class Network {
         return distance(this._points[index1], this._points[index2]);
     }
 
+    aligned(index1, index2, index3) {
+        return aligned(this._points[index1], this._points[index2], this._points[index3]);
+    }
+
     anticlockwise(index1, index2, index3) {
         return anticlockwise(this._points[index1], this._points[index2], this._points[index3]);
     }
@@ -300,7 +304,8 @@ class Network {
         }
         let range = [scope[0], scope[0]];
         for (let i = scope[0]; i < (scope[0] > scope[1] ? scope[1] + pointList.length : scope[1]); i++) {
-            if (this.anticlockwise(pointList[i % pointList.length], pointList[(i + 1) % pointList.length], sourcePointIndex) === -1) {
+            const direction = this.anticlockwise(pointList[i % pointList.length], pointList[(i + 1) % pointList.length], sourcePointIndex);
+            if (direction === -1 || direction === 0 && this.aligned(sourcePointIndex, pointList[i % pointList.length], pointList[(i + 1) % pointList.length]) < 0) {
                 if (range[0] === range[1]) {
                     range = [i, i + 1];
                 } else if (range[1] === i) {
@@ -315,71 +320,109 @@ class Network {
         return [range[0] % pointList.length, range[1] % pointList.length];
     }
 
-    findBoundingConvexHull(pointList) {
+    findOuterConvexHull(pointList) {
         const bounding = pointList.length === this._points.length;
-        if (pointList.length < 3) {
+
+        if (pointList.length === 1) {
             return [pointList, []];
         }
-        const availablePointList = new Set(pointList);
-        const boundingConvexHullPointList = this.normalizeTriangle(pointList.splice(0, 3));
-        while (pointList.length !== 0) {
-            const pointIndex = pointList.shift();
-            const range = this.tangentRange(boundingConvexHullPointList, pointIndex);
-            if (range[0] < range[1]) {
-                boundingConvexHullPointList.splice(range[0] + 1, range[1] - range[0] - 1, pointIndex);
-            } else if (range[0] > range[1]) {
-                boundingConvexHullPointList.splice(range[0] + 1);
-                boundingConvexHullPointList.splice(0, range[1], pointIndex);
+
+        let j = 2;
+        while (j < pointList.length && this.anticlockwise(pointList[0], pointList[1], pointList[j]) === 0) {
+            j++;
+        }
+
+        if (j === pointList.length) { //All points in same line
+            if (this._points[pointList[0]].x === this._points[pointList[1]].x) {
+                pointList.sort((a, b) => this._points[a].y - this._points[b].y);
+            } else {
+                pointList.sort((a, b) => this._points[a].x - this._points[b].x);
             }
-        }
+            for (let i = 0; i < pointList.length - 1; i++) {
+                this.addSegment(pointList[i], pointList[i + 1]);
+            }
+            const boundingConvexHullPointList = [...pointList];
+            for (let i = pointList.length - 2; i > 0; i--) {
+                boundingConvexHullPointList.push(pointList[i]);
+            }
+            return [boundingConvexHullPointList, []];
+        } else {
+            const availablePointList = new Set(pointList);
+            const initialPointList = [...pointList.splice(j, 1), ...pointList.splice(0, 2)];
 
-        for (let i = 0; i < boundingConvexHullPointList.length; i++) {
-            this.addSegment(boundingConvexHullPointList[i], boundingConvexHullPointList[(i + 1) % boundingConvexHullPointList.length], bounding);
-            availablePointList.delete(boundingConvexHullPointList[i]);
-        }
-        return [boundingConvexHullPointList, Array.from(availablePointList)];
-    }
-
-    connectConvexHulls(outerPointList, innerPointList) {
-        if (innerPointList.length === 0) {
-            if (outerPointList.length > 3) {
-                for (let i = 2; i < outerPointList.length - 1; i++) {
-                    this.addSegment(outerPointList[0], outerPointList[i]);
+            const boundingConvexHullPointList = this.normalizeTriangle(initialPointList);
+            while (pointList.length !== 0) {
+                const pointIndex = pointList.shift();
+                const range = this.tangentRange(boundingConvexHullPointList, pointIndex);
+                if (range[0] < range[1]) {
+                    boundingConvexHullPointList.splice(range[0] + 1, range[1] - range[0] - 1, pointIndex);
+                } else if (range[0] > range[1]) {
+                    boundingConvexHullPointList.splice(range[0] + 1);
+                    boundingConvexHullPointList.splice(0, range[1], pointIndex);
                 }
             }
-        } else if (innerPointList.length === 1) {
+
+            for (let i = 0; i < boundingConvexHullPointList.length; i++) {
+                this.addSegment(boundingConvexHullPointList[i], boundingConvexHullPointList[(i + 1) % boundingConvexHullPointList.length], bounding);
+                availablePointList.delete(boundingConvexHullPointList[i]);
+            }
+            return [boundingConvexHullPointList, Array.from(availablePointList)];
+        }
+    }
+
+    connectInsideConvexHull(pointList) {
+        if (pointList.length <= 3) {
+            return;
+        }
+
+        for (let i = 0; i < pointList.length - 2; i++) {
+            for (let j = 0; j < pointList.length - 3; j++) {
+                let k = (j + i + 2) % pointList.length;
+                if (i < k) {
+                    if (pointList.every(u => u === pointList[i] || u === pointList[k] || this.anticlockwise(pointList[i], pointList[k], u) !== 0)) {
+                        //found (i, k)
+
+                        this.addSegment(pointList[i], pointList[k]);
+                        this.connectInsideConvexHull(pointList.slice(i, k + 1));
+                        this.connectInsideConvexHull([...pointList.slice(k), ...pointList.slice(0, i + 1)]);
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    connectBetweenConvexHulls(outerPointList, innerPointList) {
+        if (innerPointList.length === 1) {
             for (const pointIndex of outerPointList) {
                 this.addSegment(pointIndex, innerPointList[0]);
             }
-        } else if (innerPointList.length === 2) {
-            const baseTrianglePointList = this.normalizeTriangle([outerPointList[0], innerPointList[0], innerPointList[1]]);
-            this.addSegment(baseTrianglePointList[0], baseTrianglePointList[1]);
-            this.addSegment(baseTrianglePointList[1], baseTrianglePointList[2]);
-            this.addSegment(baseTrianglePointList[2], baseTrianglePointList[0]);
-            for (let i = 1, j = 1; i < outerPointList.length; i++) {
-                const range = this.tangentRange(baseTrianglePointList, outerPointList[i], [j, 2]);
-                if (range[0] === range[1]) {
-                    this.addSegment(outerPointList[i], baseTrianglePointList[j]);
-                } else {
-                    this.addSegment(outerPointList[i], baseTrianglePointList[j]);
-                    this.addSegment(outerPointList[i], baseTrianglePointList[j + 1]);
-                    j += 1;
-                }
-            }
         } else {
-            const range = this.tangentRange(innerPointList, outerPointList[0]);
+            let i = 0;
+            while (i < outerPointList.length && this.anticlockwise(innerPointList[0], innerPointList[1], outerPointList[i]) !== -1) {
+                i++;
+            }
+
+            if (i === outerPointList.length) {
+                console.warn('ATTENTION');
+            }
+
+            const range = this.tangentRange(innerPointList, outerPointList[i]);
             if (range[0] < range[1]) {
                 for (let j = range[0]; j <= range[1]; j++) {
-                    this.addSegment(outerPointList[0], innerPointList[j]);
+                    this.addSegment(outerPointList[i], innerPointList[j]);
+                }
+            } else if (range[0] > range[1]) {
+                for (let j = range[0]; j <= range[1] + innerPointList.length; j++) {
+                    this.addSegment(outerPointList[i], innerPointList[j % innerPointList.length]);
                 }
             } else {
-                for (let j = range[0]; j <= range[1] + innerPointList.length; j++) {
-                    this.addSegment(outerPointList[0], innerPointList[j % innerPointList.length]);
-                }
+                console.warn('ATTENTION');
             }
 
             const scope = [range[1], range[0]];
-            for (let i = 1; i < outerPointList.length; i++) {
+            for (let k = 0; k < outerPointList.length - 1; k++) {
+                i = (i + 1) % outerPointList.length;
                 const range = this.tangentRange(innerPointList, outerPointList[i], scope);
                 if (range[0] === range[1]) {
                     this.addSegment(outerPointList[i], innerPointList[scope[0]]);
@@ -400,12 +443,12 @@ class Network {
     }
 
     buildConnectionSchemeInternal(pointList) {
-        const [convexHullPointList, restPointList] = this.findBoundingConvexHull(pointList);
-        if (restPointList.length >= 3) {
-            const innerConvexHullPointList = this.buildConnectionSchemeInternal(restPointList);
-            this.connectConvexHulls(convexHullPointList, innerConvexHullPointList);
+        const [convexHullPointList, restPointList] = this.findOuterConvexHull(pointList);
+        if (restPointList.length === 0) {
+            this.connectInsideConvexHull(convexHullPointList);
         } else {
-            this.connectConvexHulls(convexHullPointList, restPointList);
+            const innerConvexHullPointList = this.buildConnectionSchemeInternal(restPointList);
+            this.connectBetweenConvexHulls(convexHullPointList, innerConvexHullPointList);
         }
 
         return convexHullPointList;
@@ -462,7 +505,7 @@ class Network {
                 [segment1, segment2] = [segment2, segment1];
             }
 
-            if (this.segmentIndex(...convexHull.segments[0]) === this.segmentIndex(...segment1)) {
+            if (distance1 > distance2 && this.segmentIndex(...convexHull.segments[0]) === this.segmentIndex(...segment1)) {
                 this.deleteSegment(...segment1);
                 this.addSegment(...segment2);
                 replacementLog.push([
@@ -909,7 +952,7 @@ class App extends React.Component {
                         {this.renderReplacementAnimation()}
                         {this.renderBoundingLines()}
                         {this.state.showPoint && this.renderPoints()};
-                </g>
+                    </g>
                 </svg>
                 <div>
                     <p>Records:</p>
