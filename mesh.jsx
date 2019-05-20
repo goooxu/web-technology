@@ -59,7 +59,6 @@ class PointBand {
         this.points = [];
         this.circularLinkList = [];
         this.reversedCircularLinkList = [];
-        this.datumNodeReferences = [];
 
         this.setupDatumPoint();
     }
@@ -81,28 +80,23 @@ class PointBand {
     }
 
     addNode(nodeIndex, point) {
-        if (this.points[nodeIndex] !== undefined) {
+        if (this.circularLinkList[nodeIndex] !== undefined) {
             throw "Invalid parameter.";
         }
 
         this.points[nodeIndex] = point;
 
         for (let i = 1; i <= 3; i++) {
-            const direction = this.anticlockwise(-i, nodeIndex);
-            if (direction === 0 && this.aligned(-i, nodeIndex) > 0) {
-                this.datumNodeReferences[i] = nodeIndex;
-                this.circularLinkList[nodeIndex] = -i;
-                return;
-            } else if (direction > 0 && this.anticlockwise(nodeIndex, (-i) % 3 - 1) > 0) {
+            if (this.anticlockwise(-i, nodeIndex) >= 0 && this.anticlockwise(nodeIndex, (-i) % 3 - 1) > 0) {
                 let j = -i;
                 while (j !== (-i) % 3 - 1) {
-                    const k = this.circularLinkList[j];
+                    const nextNodeIndex = this.circularLinkList[j];
 
-                    if (this.anticlockwise(j, nodeIndex) > 0 && this.anticlockwise(nodeIndex, k) > 0) {
-                        this.circularLinkList[nodeIndex] = k;
+                    if (this.anticlockwise(j, nodeIndex) >= 0 && this.anticlockwise(nodeIndex, nextNodeIndex) > 0) {
+                        this.circularLinkList[nodeIndex] = nextNodeIndex;
                         this.circularLinkList[j] = nodeIndex;
                         this.reversedCircularLinkList[nodeIndex] = j;
-                        this.reversedCircularLinkList[k] = nodeIndex;
+                        this.reversedCircularLinkList[nextNodeIndex] = nodeIndex;
                         break;
                     }
 
@@ -120,46 +114,30 @@ class PointBand {
     }
 
     deleteNode(nodeIndex) {
-        if (this.points[nodeIndex] === undefined) {
+        if (this.circularLinkList[nodeIndex] === undefined) {
             throw "Invalid parameter.";
         }
 
         const nextNodeIndex = this.circularLinkList[nodeIndex];
+        const preNodeIndex = this.reversedCircularLinkList[nodeIndex];
+        this.circularLinkList[preNodeIndex] = nextNodeIndex;
+        this.reversedCircularLinkList[nextNodeIndex] = preNodeIndex;
 
-        if (nextNodeIndex < 0 && this.datumNodeReferences[-nextNodeIndex] === nodeIndex) {
-            delete this.datumNodeReferences[-nextNodeIndex];
-        } else {
-            const preNodeIndex = this.reversedCircularLinkList[nodeIndex];
-
-            this.circularLinkList[preNodeIndex] = nextNodeIndex;
-            this.reversedCircularLinkList[nextNodeIndex] = preNodeIndex;
-            delete this.reversedCircularLinkList[nodeIndex];
-        }
-
+        delete this.reversedCircularLinkList[nodeIndex];
         delete this.circularLinkList[nodeIndex];
         delete this.points[nodeIndex];
     }
 
     getAheadNodes(startNodeIndex, count) {
-        if (!this.points[startNodeIndex] === undefined) {
+        if (this.circularLinkList[startNodeIndex] === undefined) {
             throw "Invalid parameter.";
         }
 
         const pointList = [];
 
         let nodeIndex = this.circularLinkList[startNodeIndex];
-        if (nodeIndex < 0 && this.datumNodeReferences[-nodeIndex] === startNodeIndex) {
-            startNodeIndex = nodeIndex;
-            nodeIndex = this.circularLinkList[nodeIndex];
-        }
-
         while (pointList.length < count && nodeIndex !== startNodeIndex) {
-            if (nodeIndex < 0) {
-                const referredNodeIndex = this.datumNodeReferences[-nodeIndex];
-                if (referredNodeIndex !== undefined) {
-                    pointList.push(referredNodeIndex);
-                }
-            } else {
+            if (nodeIndex >= 0) {
                 pointList.push(nodeIndex);
             }
             nodeIndex = this.circularLinkList[nodeIndex];
@@ -443,110 +421,205 @@ class Network {
                 const clockwisePointList0 = this._adjacencyList[segment[0]].getAheadNodes(segment[1], 1);
                 const clockwisePointList1 = this._adjacencyList[segment[1]].getAheadNodes(segment[0], 1);
 
-                const pointList = [
-                    segment[0],
-                    clockwisePointList1[0],
-                    segment[1],
-                    clockwisePointList0[0]
-                ];
+                const pointList = [segment[0], clockwisePointList1[0], segment[1], clockwisePointList0[0]];
 
-                if (!this.convexHull(pointList)) {
-                    continue;
+                if (this.convexHull(pointList)) {
+                    convexHulls.push({
+                        pointList,
+                        segmentList: [[0, 2]]
+                    });
+                }
+            } else if (side === 5) {
+                const clockwisePointList0 = this._adjacencyList[segment[0]].getAheadNodes(segment[1], 2);
+                const clockwisePointList1 = this._adjacencyList[segment[1]].getAheadNodes(segment[0], 2);
+
+                if (clockwisePointList0.length > 1) {
+                    const pointList = [segment[0], clockwisePointList1[0], segment[1], clockwisePointList0[0], clockwisePointList0[1]];
+
+                    if (this.convexHull(pointList)) {
+                        convexHulls.push({
+                            pointList,
+                            segmentList: [[0, 2], [0, 3]]
+                        });
+                    }
+                }
+                if (clockwisePointList1.length > 1) {
+                    const pointList = [segment[0], clockwisePointList1[0], clockwisePointList1[1], segment[1], clockwisePointList0[0]];
+
+                    if (this.convexHull(pointList)) {
+                        convexHulls.push({
+                            pointList,
+                            segmentList: [[3, 0], [3, 1]]
+                        });
+                    }
                 }
 
-                convexHulls.push({
-                    pointList,
-                    segments: [segment]
-                });
             }
         }
         return convexHulls;
     }
 
-    fineTuneConvexHull(convexHull) {
-        const replacementLog = [];
-        const influencedSegmentList = [];
-        if (convexHull.pointList.length === 4) {
-            let segment1 = [convexHull.pointList[0], convexHull.pointList[2]];
-            let segment2 = [convexHull.pointList[1], convexHull.pointList[3]];
+    fineTuneConvexHull(convexHull, replacementLog, influencedSegmentAddList, influencedSegmentDeleteList) {
+        const pointList = convexHull.pointList;
+        const segmentList = convexHull.segmentList;
+
+        if (pointList.length === 4) {
+            const segmentIndex = segmentList[0];
+            const segment1 = [pointList[segmentIndex[0]], pointList[segmentIndex[1]]];
+            const segment2 = [pointList[(segmentIndex[0] + 1) % pointList.length], pointList[(segmentIndex[1] + 1) % pointList.length]];
             const distance1 = this.distance(...segment1);
             const distance2 = this.distance(...segment2);
-            if (distance1 < distance2) {
-                [segment1, segment2] = [segment2, segment1];
-            }
 
-            if (distance1 > distance2 && this.segmentIndex(...convexHull.segments[0]) === this.segmentIndex(...segment1)) {
+            if (distance1 > distance2) {
                 this.deleteSegment(...segment1);
                 this.addSegment(...segment2);
-                replacementLog.push([
-                    this.segmentIndex(...segment1),
-                    this.segmentIndex(...segment2),
-                    distance2 - distance1
-                ]);
+                replacementLog.push([segment1, segment2, distance2 - distance1]);
 
-                influencedSegmentList.push(...[
-                    [convexHull.pointList[0], convexHull.pointList[1]],
-                    [convexHull.pointList[1], convexHull.pointList[2]],
-                    [convexHull.pointList[2], convexHull.pointList[3]],
-                    [convexHull.pointList[3], convexHull.pointList[0]]
+                influencedSegmentAddList.push(...[
+                    [pointList[0], pointList[1]],
+                    [pointList[1], pointList[2]],
+                    [pointList[2], pointList[3]],
+                    [pointList[3], pointList[0]]
                 ].map(segment => this.segmentIndex(...segment)));
+
+                return true;
+            }
+        } else if (pointList.length === 5) {
+            const originalSegmentList = segmentList.map(i => i.map(j => pointList[j]));
+            let originalDistances = originalSegmentList.map(i => this.distance(...i));
+
+            let optimalOffset = 0;
+            let optimalSegmentList;
+            let optimalDistances;
+
+            for (let offset of [-1, 1]) {
+                const adjustiveSegmentList = segmentList.map(i => [...i.map(j => pointList[(j + pointList.length + offset) % pointList.length])]);
+                const adjustiveDistances = adjustiveSegmentList.map(i => this.distance(...i));
+                if (adjustiveDistances[0] + adjustiveDistances[1] < originalDistances[0] + originalDistances[1]) {
+                    optimalOffset = offset;
+                    optimalSegmentList = adjustiveSegmentList;
+                    optimalDistances = adjustiveDistances;
+                }
+            }
+
+            if (optimalOffset !== 0) {
+                const order = optimalOffset - 1 ? [1, 0] : [0, 1];
+
+                this.deleteSegment(...originalSegmentList[order[0]]);
+                this.addSegment(...optimalSegmentList[order[0]]);
+                this.deleteSegment(...originalSegmentList[order[1]]);
+                this.addSegment(...optimalSegmentList[order[1]]);
+
+                replacementLog.push(
+                    [originalSegmentList[order[0]], optimalSegmentList[order[0]], optimalDistances[order[0]] - originalDistances[order[0]]],
+                    [originalSegmentList[order[1]], optimalSegmentList[order[1]], optimalDistances[order[1]] - originalDistances[order[1]]]
+                );
+                influencedSegmentDeleteList.push(this.segmentIndex(...originalSegmentList[1]));
+                influencedSegmentAddList.push(...[
+                    [pointList[0], pointList[1]],
+                    [pointList[1], pointList[2]],
+                    [pointList[2], pointList[3]],
+                    [pointList[3], pointList[4]],
+                    [pointList[4], pointList[0]],
+                    optimalSegmentList[0],
+                    optimalSegmentList[1]
+                ].map(segment => this.segmentIndex(...segment)));
+
+                return true;
             }
         }
-        return [replacementLog, influencedSegmentList];
     }
 
-    shuffleConvexHull(convexHull) {
-        const replacementLog = [];
-        if (convexHull.pointList.length === 4) {
-            let segment1 = [convexHull.pointList[0], convexHull.pointList[2]];
-            let segment2 = [convexHull.pointList[1], convexHull.pointList[3]];
+    shuffleConvexHull(convexHull, replacementLog, influencedSegmentAddList) {
+        const pointList = convexHull.pointList;
+        if (pointList.length === 4) {
+            const segmentIndex = convexHull.segmentList[0];
+            const segment1 = [pointList[segmentIndex[0]], pointList[segmentIndex[1]]];
+            const segment2 = [pointList[(segmentIndex[0] + 1) % pointList.length], pointList[(segmentIndex[1] + 1) % pointList.length]];
+
             const distance1 = this.distance(...segment1);
             const distance2 = this.distance(...segment2);
-            if (this.segmentIndex(...convexHull.segments[0]) === this.segmentIndex(...segment2)) {
-                [segment1, segment2] = [segment2, segment1];
-            }
 
             this.deleteSegment(...segment1);
             this.addSegment(...segment2);
-            replacementLog.push([
-                this.segmentIndex(...segment1),
-                this.segmentIndex(...segment2),
-                distance2 - distance1
-            ]);
+            replacementLog.push([segment1, segment2, distance2 - distance1]);
+            influencedSegmentAddList.push(this.segmentIndex(...segment2));
         }
-        return replacementLog;
     }
 
-    fineTune() {
-        const segmentQueue = [...this._internalSegmentList.values()];
-        const segmentIndexSet = new Set(this._internalSegmentList);
-        const replacementLog = [];
+    fineTuneForConvexQuadrilateral(replacementLog) {
+        const segmentIndexQueue = new Set(this._internalSegmentList);
 
-        while (segmentQueue.length !== 0) {
-            const segmentIndex = segmentQueue.shift();
+        for (const segmentIndex of segmentIndexQueue) {
+            segmentIndexQueue.delete(segmentIndex);
+
             const segment = this._segments[segmentIndex];
-            segmentIndexSet.delete(segmentIndex);
-
             const convexHulls = this.selectConvexHulls(segment, [4]);
+            const influencedSegmentAddList = [];
+            const influencedSegmentDeleteList = [];
             for (const convexHull of convexHulls) {
-                const [replacementLogFragment, influencedSegmentList] = this.fineTuneConvexHull(convexHull);
-                replacementLog.push(...replacementLogFragment);
-                for (const influencedSegmentIndex of influencedSegmentList) {
-                    if (this._boundingSegmentList.has(influencedSegmentIndex) || segmentIndexSet.has(influencedSegmentIndex)) {
-                        continue;
-                    }
-
-                    segmentQueue.push(influencedSegmentIndex);
-                    segmentIndexSet.add(influencedSegmentIndex);
+                this.fineTuneConvexHull(convexHull, replacementLog, influencedSegmentAddList, influencedSegmentDeleteList);
+            }
+            for (const influencedSegmentIndex of influencedSegmentAddList) {
+                if (this._boundingSegmentList.has(influencedSegmentIndex)) {
+                    continue;
                 }
+
+                segmentIndexQueue.add(influencedSegmentIndex);
             }
         }
+    }
+
+    fineTuneForConvexPentagon(replacementLog) {
+        const segmentIndexQueue = new Set(this._internalSegmentList);
+
+        for (const segmentIndex of segmentIndexQueue) {
+            segmentIndexQueue.delete(segmentIndex);
+
+            const segment = this._segments[segmentIndex];
+            const convexHulls = this.selectConvexHulls(segment, [5]);
+            const influencedSegmentAddList = [];
+            const influencedSegmentDeleteList = [];
+            for (const convexHull of convexHulls) {
+                if (this.fineTuneConvexHull(convexHull, replacementLog, influencedSegmentAddList, influencedSegmentDeleteList)) {
+                    break;
+                }
+            }
+            for (const influencedSegmentIndex of influencedSegmentDeleteList) {
+                segmentIndexQueue.delete(influencedSegmentIndex);
+            }
+            for (const influencedSegmentIndex of influencedSegmentAddList) {
+                if (this._boundingSegmentList.has(influencedSegmentIndex)) {
+                    continue;
+                }
+
+                segmentIndexQueue.add(influencedSegmentIndex);
+            }
+        }
+    }
+
+    handleFineTuneForQuadrilateral() {
+        const replacementLog = [];
+        this.fineTuneForConvexQuadrilateral(replacementLog);
 
         const internalSegmentList = [...this._internalSegmentList];
         const internalSegmentTotalLength = this.totalLength(internalSegmentList);
 
         return [
-            replacementLog,
+            replacementLog.map(i => [this.segmentIndex(...i[0]), this.segmentIndex(...i[1]), i[2]]),
+            internalSegmentList,
+            internalSegmentTotalLength];
+    }
+
+    handleFineTuneForPentagon() {
+        const replacementLog = [];
+        this.fineTuneForConvexPentagon(replacementLog);
+
+        const internalSegmentList = [...this._internalSegmentList];
+        const internalSegmentTotalLength = this.totalLength(internalSegmentList);
+
+        return [
+            replacementLog.map(i => [this.segmentIndex(...i[0]), this.segmentIndex(...i[1]), i[2]]),
             internalSegmentList,
             internalSegmentTotalLength];
     }
@@ -562,13 +635,10 @@ class Network {
 
             const convexHulls = this.selectConvexHulls(segment, [4]);
             for (const convexHull of convexHulls) {
-                const replacementLogFragment = this.shuffleConvexHull(convexHull);
-                replacementLog.push(...replacementLogFragment);
-
-                for (const replacement of replacementLogFragment) {
-                    segmentQueue.splice(randomIndex, 1, replacement[1]);
-                    k++;
-                }
+                const influencedSegmentAddList = [];
+                this.shuffleConvexHull(convexHull, replacementLog, influencedSegmentAddList);
+                segmentQueue.splice(randomIndex, 1, influencedSegmentAddList[0]);
+                k++;
             }
         }
 
@@ -576,7 +646,7 @@ class Network {
         const internalSegmentTotalLength = this.totalLength(internalSegmentList);
 
         return [
-            replacementLog,
+            replacementLog.map(i => [this.segmentIndex(...i[0]), this.segmentIndex(...i[1]), i[2]]),
             internalSegmentList,
             internalSegmentTotalLength];
     }
@@ -663,7 +733,8 @@ class App extends React.Component {
         this.handleShowPointChange = this.handleShowPointChange.bind(this);
         this.handleShowReplayChange = this.handleShowReplayChange.bind(this);
         this.handleShowLabelChange = this.handleShowLabelChange.bind(this);
-        this.handleFineTune = this.handleFineTune.bind(this);
+        this.handleFineTuneForQuadrilateral = this.handleFineTuneForQuadrilateral.bind(this);
+        this.handleFineTuneForPentagon = this.handleFineTuneForPentagon.bind(this);
         this.handleShuffle = this.handleShuffle.bind(this);
         this.handleAnimationStop = this.handleAnimationStop.bind(this);
         this.handleAnimationSpeedUp = this.handleAnimationSpeedUp.bind(this);
@@ -777,8 +848,16 @@ class App extends React.Component {
         this.setState({ showLabel: e.target.checked });
     }
 
-    handleFineTune() {
-        const [replacementLog, internalLineList, internalLineTotalLength] = this.network.fineTune();
+    handleFineTuneForQuadrilateral() {
+        const [replacementLog, internalLineList, internalLineTotalLength] = this.network.handleFineTuneForQuadrilateral();
+        this.showConnectionSchemeWithReplay(
+            replacementLog,
+            internalLineList,
+            internalLineTotalLength);
+    }
+
+    handleFineTuneForPentagon() {
+        const [replacementLog, internalLineList, internalLineTotalLength] = this.network.handleFineTuneForPentagon();
         this.showConnectionSchemeWithReplay(
             replacementLog,
             internalLineList,
@@ -903,7 +982,9 @@ class App extends React.Component {
                     <span><label>Show labels: <input type="checkbox" checked={this.state.showLabel} onChange={this.handleShowLabelChange} /></label></span>
                 </p>
                 <p>
-                    <span><button onClick={this.handleFineTune} disabled={this.state.replaying}>Fine tune</button></span>
+                    <span><button onClick={this.handleFineTuneForQuadrilateral} disabled={this.state.replaying}>Fine tune for quadrilateral</button></span>
+                    <span>&nbsp;&nbsp;</span>
+                    <span><button onClick={this.handleFineTuneForPentagon} disabled={this.state.replaying}>Fine tune for pentagon</button></span>
                     <span>&nbsp;&nbsp;</span>
                     <span><button onClick={this.handleShuffle} disabled={this.state.replaying}>Shuffle</button></span>
                     <span>&nbsp;&nbsp;</span>
