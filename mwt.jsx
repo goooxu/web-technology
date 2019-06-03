@@ -490,12 +490,12 @@ class Network {
 
             let optimalOffset = 0;
             let optimalSegmentList;
-            let optimalDistances;
+            let optimalDistances = [...originalDistances];
 
             for (let offset of [-1, 1]) {
                 const adjustiveSegmentList = segmentList.map(i => [...i.map(j => pointList[(j + pointList.length + offset) % pointList.length])]);
                 const adjustiveDistances = adjustiveSegmentList.map(i => this.distance(...i));
-                if (adjustiveDistances[0] + adjustiveDistances[1] < originalDistances[0] + originalDistances[1]) {
+                if (adjustiveDistances[0] + adjustiveDistances[1] < optimalDistances[0] + optimalDistances[1]) {
                     optimalOffset = offset;
                     optimalSegmentList = adjustiveSegmentList;
                     optimalDistances = adjustiveDistances;
@@ -726,13 +726,15 @@ class App extends React.Component {
             replayAnimationDuration: 1000,
             showPoint: true,
             showReplay: true,
-            showLabel: false
+            showPointLabel: false,
+            showEdgeLabel: false
         };
         this.handlePointNumberChange = this.handlePointNumberChange.bind(this);
         this.handlePointNumberSubmit = this.handlePointNumberSubmit.bind(this);
         this.handleShowPointChange = this.handleShowPointChange.bind(this);
         this.handleShowReplayChange = this.handleShowReplayChange.bind(this);
-        this.handleShowLabelChange = this.handleShowLabelChange.bind(this);
+        this.handleShowPointLabelChange = this.handleShowPointLabelChange.bind(this);
+        this.handleShowEdgeLabelChange = this.handleShowEdgeLabelChange.bind(this);
         this.handleFineTuneForQuadrilateral = this.handleFineTuneForQuadrilateral.bind(this);
         this.handleFineTuneForPentagon = this.handleFineTuneForPentagon.bind(this);
         this.handleShuffle = this.handleShuffle.bind(this);
@@ -844,24 +846,32 @@ class App extends React.Component {
         this.setState({ showReplay: e.target.checked });
     }
 
-    handleShowLabelChange(e) {
-        this.setState({ showLabel: e.target.checked });
+    handleShowPointLabelChange(e) {
+        this.setState({ showPointLabel: e.target.checked });
+    }
+
+    handleShowEdgeLabelChange(e) {
+        this.setState({ showEdgeLabel: e.target.checked });
     }
 
     handleFineTuneForQuadrilateral() {
         const [replacementLog, internalLineList, internalLineTotalLength] = this.network.handleFineTuneForQuadrilateral();
-        this.showConnectionSchemeWithReplay(
-            replacementLog,
-            internalLineList,
-            internalLineTotalLength);
+        if (replacementLog.length !== 0) {
+            this.showConnectionSchemeWithReplay(
+                replacementLog,
+                internalLineList,
+                internalLineTotalLength);
+        }
     }
 
     handleFineTuneForPentagon() {
         const [replacementLog, internalLineList, internalLineTotalLength] = this.network.handleFineTuneForPentagon();
-        this.showConnectionSchemeWithReplay(
-            replacementLog,
-            internalLineList,
-            internalLineTotalLength);
+        if (replacementLog.length !== 0) {
+            this.showConnectionSchemeWithReplay(
+                replacementLog,
+                internalLineList,
+                internalLineTotalLength);
+        }
     }
 
     handleShuffle() {
@@ -919,7 +929,7 @@ class App extends React.Component {
             const line = this.network.getSegment(lineIndex);
             return <React.Fragment key={lineIndex}>
                 <line x1={line[0].x} y1={this.props.height - line[0].y} x2={line[1].x} y2={this.props.height - line[1].y} stroke="black" strokeWidth="1.5" />
-                {this.state.showLabel && <text x={(line[0].x + line[1].x) / 2} y={this.props.height - (line[0].y + line[1].y) / 2} stroke="blue">{lineIndex}</text>}
+                {this.state.showEdgeLabel && <text x={(line[0].x + line[1].x) / 2} y={this.props.height - (line[0].y + line[1].y) / 2} stroke="blue">{lineIndex}</text>}
             </React.Fragment>;
         });
     }
@@ -930,7 +940,7 @@ class App extends React.Component {
                 const line = this.network.getSegment(lineIndex);
                 return <React.Fragment key={lineIndex}>
                     <line x1={line[0].x} y1={this.props.height - line[0].y} x2={line[1].x} y2={this.props.height - line[1].y} stroke="silver" strokeWidth="1.5" />
-                    {this.state.showLabel && <text x={(line[0].x + line[1].x) / 2} y={this.props.height - (line[0].y + line[1].y) / 2} stroke="blue">{lineIndex}</text>}
+                    {this.state.showEdgeLabel && <text x={(line[0].x + line[1].x) / 2} y={this.props.height - (line[0].y + line[1].y) / 2} stroke="blue">{lineIndex}</text>}
                 </React.Fragment>;
             });
     }
@@ -958,64 +968,73 @@ class App extends React.Component {
     renderPoints() {
         return this.state.points.map((point, pointIndex) => <React.Fragment key={pointIndex}>
             <circle cx={point.x} cy={this.props.height - point.y} r="3" fill="red" />
-            {this.state.showLabel && <text x={point.x} y={this.props.height - point.y} stroke="brown">{pointIndex}</text>}
+            {this.state.showPointLabel && <text x={point.x} y={this.props.height - point.y} stroke="brown">{pointIndex}</text>}
         </React.Fragment>);
     }
 
     render() {
         return <React.Fragment>
             <div>
-                <p>
-                    <span>Vertex number: <input type="number" value={this.state.pointNumber} onChange={this.handlePointNumberChange} /> <button onClick={this.handlePointNumberSubmit}>Create mesh</button></span>
-                    <span>,&nbsp;&nbsp;</span>
-                    <span>Edge number: {this.state.boundingLineList.length + this.state.internalLineList.size}</span>
-                    <span>,&nbsp;&nbsp;</span>
-                    <span>Edge total length: {this.state.internalLineTotalLength.toFixed(2)}</span>
-                    <span>,&nbsp;&nbsp;</span>
-                    <span>Triangle number: {(this.state.boundingLineList.length + this.state.internalLineList.size * 2) / 3}</span>
-                </p>
-                <p>
-                    <span><label>Show replays: <input type="checkbox" checked={this.state.showReplay} onChange={this.handleShowReplayChange} /></label></span>
-                    <span>,&nbsp;&nbsp;</span>
-                    <span><label>Show points: <input type="checkbox" checked={this.state.showPoint} onChange={this.handleShowPointChange} /></label></span>
-                    <span>,&nbsp;&nbsp;</span>
-                    <span><label>Show labels: <input type="checkbox" checked={this.state.showLabel} onChange={this.handleShowLabelChange} /></label></span>
-                </p>
-                <p>
-                    <span><button onClick={this.handleFineTuneForQuadrilateral} disabled={this.state.replaying}>Fine tune for quadrilateral</button></span>
-                    <span>&nbsp;&nbsp;</span>
-                    <span><button onClick={this.handleFineTuneForPentagon} disabled={this.state.replaying}>Fine tune for pentagon</button></span>
-                    <span>&nbsp;&nbsp;</span>
-                    <span><button onClick={this.handleShuffle} disabled={this.state.replaying}>Shuffle</button></span>
-                    <span>&nbsp;&nbsp;</span>
-                    {this.state.replaying && <React.Fragment>
-                        <span>,&nbsp;&nbsp;</span>
+                <span>Vertex number: <input type="number" value={this.state.pointNumber} onChange={this.handlePointNumberChange} /> <button onClick={this.handlePointNumberSubmit}>Create triangulation</button></span>
+                <span>&nbsp;&nbsp;</span>
+                <span><button onClick={this.handleFineTuneForQuadrilateral} disabled={this.state.replaying}>Fine tune for ⬜</button></span>
+                <span>&nbsp;&nbsp;</span>
+                <span><button onClick={this.handleFineTuneForPentagon} disabled={this.state.replaying}>Fine tune for ⭔</button></span>
+                <span>&nbsp;&nbsp;</span>
+                <span><button onClick={this.handleShuffle} disabled={this.state.replaying}>Shuffle</button></span>
+            </div>
+            <div className="container">
+                <div>
+                    <svg width={this.props.width} height={this.props.height} xmlns="http://www.w3.org/2000/svg">
+                        <g>
+                            {this.renderInternalLines()}
+                            {this.renderReplacementAnimation()}
+                            {this.renderBoundingLines()}
+                            {this.state.showPoint && this.renderPoints()};
+                    </g>
+                    </svg>
+                    {this.state.replaying && <p>
                         <span>Steps: {this.state.currentReplayRow}/{this.state.replacementLog.length}</span>
                         <span>,&nbsp;&nbsp;</span>
                         <span>Animation speed: <button onClick={this.handleAnimationSpeedUp}>+</button>&nbsp;<button onClick={this.handleAnimationSpeedDown}>-</button></span>
-                    </React.Fragment>}
-                </p>
-            </div>
-            <div className="container">
-                <svg width={this.props.width} height={this.props.height} xmlns="http://www.w3.org/2000/svg">
-                    <g>
-                        {this.renderInternalLines()}
-                        {this.renderReplacementAnimation()}
-                        {this.renderBoundingLines()}
-                        {this.state.showPoint && this.renderPoints()};
-                    </g>
-                </svg>
+                    </p>}
+                </div>
+
                 <div>
-                    <p>Records:</p>
-                    {this.state.connectionSchemeRecords.map((item, index) => item.visible && <div key={index}>
-                        <span>&nbsp;&nbsp;</span>
-                        {this.state.activeRecordIndex === index ?
-                            <span>#{index.toString().padStart(5, '0')}</span> :
-                            <a href="#" onClick={this.handleRecordShow} data-tag={index}>#{index.toString().padStart(5, '0')}</a>}
-                        <span>&nbsp;(total length: {item.internalLineTotalLength.toFixed(2)})</span>
-                        <span>&nbsp;&nbsp;</span>
-                        {this.state.activeRecordIndex !== index && <button onClick={this.handleRecordDelete} data-tag={index}>X</button>}
-                    </div>)}
+                    <div className="legend">
+                        <b>Parameters:</b>
+                        <p>Vertex number: {this.state.pointNumber}</p>
+                        <p>Edge number: {this.state.boundingLineList.length + this.state.internalLineList.size}</p>
+                        <p>Edge total length: {this.state.internalLineTotalLength.toFixed(2)}</p>
+                        <p>Triangle number: {(this.state.boundingLineList.length + this.state.internalLineList.size * 2) / 3}</p>
+                    </div>
+                    <div className="legend">
+                        <b>Options:</b>
+                        <p>Show replays: <input type="checkbox" checked={this.state.showReplay} onChange={this.handleShowReplayChange} /></p>
+                        <p>Show points: <input type="checkbox" checked={this.state.showPoint} onChange={this.handleShowPointChange} /></p>
+                        <p>Show point labels: <input type="checkbox" checked={this.state.showPointLabel} onChange={this.handleShowPointLabelChange} /></p>
+                        <p>Show edge labels: <input type="checkbox" checked={this.state.showEdgeLabel} onChange={this.handleShowEdgeLabelChange} /></p>
+                    </div>
+                    <div className="legend">
+                        <b>Records:</b>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <td>No.</td>
+                                    <td>Total length</td>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {this.state.connectionSchemeRecords.map((item, index) => item.visible && <tr key={index}>
+                                    <td>{this.state.activeRecordIndex === index ?
+                                        <span>{index.toString().padStart(5, '0')}</span> :
+                                        <a href="#" onClick={this.handleRecordShow} data-tag={index}>{index.toString().padStart(5, '0')}</a>}</td>
+                                    <td>{item.internalLineTotalLength.toFixed(2)}</td>
+                                    <td>{this.state.activeRecordIndex !== index && <button onClick={this.handleRecordDelete} data-tag={index}>X</button>}</td>
+                                </tr>)}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </React.Fragment>;
