@@ -1,4 +1,4 @@
-class RandomNumberPool {
+class RandomEngine {
     constructor() {
         this.size = 1024;
         this.array = new Uint32Array(this.size);
@@ -22,6 +22,49 @@ function indexFromParameters(index1, index2, orderInsensitive = false) {
         }
     }
     return (index1 + index2) * (index1 + index2 + 1) / 2 + index1;
+}
+
+function generatePoints(randomEngine, pointNumber) {
+    const resolution = 1024;
+    const grid = 16;
+    const padding = 4;
+
+    const points = [];
+
+    const center = { x: resolution / 2, y: resolution / 2 };
+    const radius2 = Math.pow(Math.min(resolution / 2, resolution / 2), 2);
+
+    const pointList = new Set();
+    while (points.length < pointNumber) {
+        let x = randomEngine.next() % resolution;
+        let y = randomEngine.next() % resolution;
+
+        if ((x - center.x) * (x - center.x) + (y - center.y) * (y - center.y) > radius2) {
+            continue;
+        }
+
+        const pointIndex = indexFromParameters(Math.floor(x / grid), Math.floor(y / grid));
+        if (pointList.has(pointIndex)) {
+            continue;
+        }
+
+        if (x % grid < padding) {
+            x += padding;
+        } else if (x % grid >= grid - padding) {
+            x -= padding;
+        }
+
+        if (y % grid < padding) {
+            y += padding;
+        } else if (y % grid >= grid - padding) {
+            y -= padding;
+        }
+
+        points.push({ x: x / resolution, y: y / resolution });
+        pointList.add(pointIndex);
+    }
+
+    return points;
 }
 
 function distance(p1, p2) {
@@ -148,9 +191,9 @@ class PointBand {
 }
 
 class Network {
-    constructor(width, height, pointNumber) {
-        this._randomNumberPool = new RandomNumberPool();
-        this._points = this.generatePoints(width, height, pointNumber);
+    constructor(points, randomEngine) {
+        this._randomEngine = randomEngine;
+        this._points = points;
         this._segments = [];
         this._boundingSegmentList = new Set();
         this._internalSegmentList = new Set();
@@ -198,45 +241,6 @@ class Network {
         this._adjacencyList[pointIndex1].deleteNode(pointIndex2);
         this._adjacencyList[pointIndex2].deleteNode(pointIndex1);
         this._internalSegmentList.delete(segmentIndex);
-    }
-
-    generatePoints(width, height, pointNumber) {
-        const points = [];
-
-        const center = { x: width / 2, y: height / 2 };
-        const radius2 = Math.pow(Math.min(width / 2, height / 2), 2);
-
-        const pointList = new Set();
-        while (points.length < pointNumber) {
-            let x = this._randomNumberPool.next() % width;
-            let y = this._randomNumberPool.next() % height;
-
-            if ((x - center.x) * (x - center.x) + (y - center.y) * (y - center.y) > radius2) {
-                continue;
-            }
-
-            const pointIndex = indexFromParameters(Math.floor(x / 16), Math.floor(y / 16));
-            if (pointList.has(pointIndex)) {
-                continue;
-            }
-
-            if (x % 16 < 4) {
-                x += 4;
-            } else if (x % 16 >= 12) {
-                x -= 4;
-            }
-
-            if (y % 16 < 4) {
-                y += 4;
-            } else if (y % 16 >= 12) {
-                y -= 4;
-            }
-
-            points.push({ x, y });
-            pointList.add(pointIndex);
-        }
-
-        return points;
     }
 
     normalizeTriangle(trianglePointList) {
@@ -629,7 +633,7 @@ class Network {
         const replacementLog = [];
 
         for (let k = 0; k < this._internalSegmentList.size;) {
-            const randomIndex = this._randomNumberPool.next() % segmentQueue.length;
+            const randomIndex = this._randomEngine.next() % segmentQueue.length;
             const segmentIndex = segmentQueue[randomIndex];
             const segment = this._segments[segmentIndex];
 
@@ -712,6 +716,7 @@ class AnimationLine extends React.Component {
 class App extends React.Component {
     constructor(props) {
         super(props);
+        this.randomEngine = new RandomEngine();
         this.state = {
             pointNumber: 9,
             points: [],
@@ -730,7 +735,9 @@ class App extends React.Component {
             showEdgeLabel: false
         };
         this.handlePointNumberChange = this.handlePointNumberChange.bind(this);
-        this.handlePointNumberSubmit = this.handlePointNumberSubmit.bind(this);
+        this.handleRandomGeneratePoints = this.handleRandomGeneratePoints.bind(this);
+        this.handleImportPoints = this.handleImportPoints.bind(this);
+        this.handleExportPoints = this.handleExportPoints.bind(this);
         this.handleShowPointChange = this.handleShowPointChange.bind(this);
         this.handleShowReplayChange = this.handleShowReplayChange.bind(this);
         this.handleShowPointLabelChange = this.handleShowPointLabelChange.bind(this);
@@ -745,7 +752,7 @@ class App extends React.Component {
         this.handleRecordDelete = this.handleRecordDelete.bind(this);
     }
 
-    setupMesh(points, boundingLineList, callback) {
+    initialize(points, boundingLineList, callback) {
         this.setState({
             points,
             boundingLineList,
@@ -797,6 +804,15 @@ class App extends React.Component {
         });
     }
 
+    createNewScheme(points) {
+        console.clear();
+        this.network = new Network(points, this.randomEngine);
+        const [boundingLineList, internalLineList, internalLineTotalLength] = this.network.buildConnectionScheme();
+        this.initialize(this.network.points(), boundingLineList, () => {
+            this.showConnectionScheme(internalLineList, internalLineTotalLength);
+        });
+    }
+
     handleAnimationStop() {
         this.setState(state => {
             if (!state.showReplay) {
@@ -829,14 +845,20 @@ class App extends React.Component {
         }
     }
 
-    handlePointNumberSubmit() {
-        console.clear();
-        this.network = new Network(this.props.width, this.props.height, this.state.pointNumber);
-        const [boundingLineList, internalLineList, internalLineTotalLength] = this.network.buildConnectionScheme();
-        this.setupMesh(this.network.points(), boundingLineList, () => {
-            this.showConnectionScheme(internalLineList, internalLineTotalLength);
-        });
+    handleRandomGeneratePoints() {
+        this.createNewScheme(generatePoints(this.randomEngine, this.state.pointNumber));
     }
+
+    handleImportPoints() {
+        const pointText = prompt('Points JSON string:');
+        this.createNewScheme(JSON.parse(pointText));
+    }
+
+    handleExportPoints() {
+        const pointText = JSON.stringify(this.state.points);
+        navigator.clipboard.writeText(pointText).then(() => alert('Export points data to clipboard successfully!'));
+    }
+
 
     handleShowPointChange(e) {
         this.setState({ showPoint: e.target.checked });
@@ -921,15 +943,21 @@ class App extends React.Component {
     }
 
     componentDidMount() {
-        this.handlePointNumberSubmit();
+        this.handleRandomGeneratePoints();
     }
 
     renderBoundingLines() {
         return this.state.boundingLineList.map(lineIndex => {
             const line = this.network.getSegment(lineIndex);
             return <React.Fragment key={lineIndex}>
-                <line x1={line[0].x} y1={this.props.height - line[0].y} x2={line[1].x} y2={this.props.height - line[1].y} stroke="black" strokeWidth="1.5" />
-                {this.state.showEdgeLabel && <text x={(line[0].x + line[1].x) / 2} y={this.props.height - (line[0].y + line[1].y) / 2} stroke="blue">{lineIndex}</text>}
+                <line
+                    x1={line[0].x * this.props.width}
+                    y1={line[0].y * this.props.height}
+                    x2={line[1].x * this.props.width}
+                    y2={line[1].y * this.props.height} stroke="black" strokeWidth="1.5" />
+                {this.state.showEdgeLabel && <text
+                    x={(line[0].x + line[1].x) / 2 * this.props.width}
+                    y={(line[0].y + line[1].y) / 2 * this.props.height} stroke="blue">{lineIndex}</text>}
             </React.Fragment>;
         });
     }
@@ -939,8 +967,14 @@ class App extends React.Component {
             .map(lineIndex => {
                 const line = this.network.getSegment(lineIndex);
                 return <React.Fragment key={lineIndex}>
-                    <line x1={line[0].x} y1={this.props.height - line[0].y} x2={line[1].x} y2={this.props.height - line[1].y} stroke="silver" strokeWidth="1.5" />
-                    {this.state.showEdgeLabel && <text x={(line[0].x + line[1].x) / 2} y={this.props.height - (line[0].y + line[1].y) / 2} stroke="blue">{lineIndex}</text>}
+                    <line
+                        x1={line[0].x * this.props.width}
+                        y1={line[0].y * this.props.height}
+                        x2={line[1].x * this.props.width}
+                        y2={line[1].y * this.props.height} stroke="silver" strokeWidth="1.5" />
+                    {this.state.showEdgeLabel && <text
+                        x={(line[0].x + line[1].x) / 2 * this.props.width}
+                        y={(line[0].y + line[1].y) / 2 * this.props.height} stroke="blue">{lineIndex}</text>}
                 </React.Fragment>;
             });
     }
@@ -951,13 +985,13 @@ class App extends React.Component {
             const newLine = this.network.getSegment(this.state.replacementLog[this.state.currentReplayRow][1]);
             return <React.Fragment>
                 <polygon
-                    points={`${oldLine[0].x},${this.props.height - oldLine[0].y} ${newLine[0].x},${this.props.height - newLine[0].y} ${oldLine[1].x},${this.props.height - oldLine[1].y} ${newLine[1].x},${this.props.height - newLine[1].y}`}
+                    points={`${oldLine[0].x * this.props.width},${oldLine[0].y * this.props.height} ${newLine[0].x * this.props.width},${newLine[0].y * this.props.height} ${oldLine[1].x * this.props.width},${oldLine[1].y * this.props.height} ${newLine[1].x * this.props.width},${newLine[1].y * this.props.height}`}
                     fill="lightyellow" stroke="grey" strokeWidth="1.5" />
                 <AnimationLine key={this.state.currentReplayRow}
-                    x1={oldLine[0].x} y1={this.props.height - oldLine[0].y}
-                    x2={oldLine[1].x} y2={this.props.height - oldLine[1].y}
-                    x3={newLine[0].x} y3={this.props.height - newLine[0].y}
-                    x4={newLine[1].x} y4={this.props.height - newLine[1].y}
+                    x1={oldLine[0].x * this.props.width} y1={oldLine[0].y * this.props.height}
+                    x2={oldLine[1].x * this.props.width} y2={oldLine[1].y * this.props.height}
+                    x3={newLine[0].x * this.props.width} y3={newLine[0].y * this.props.height}
+                    x4={newLine[1].x * this.props.width} y4={newLine[1].y * this.props.height}
                     quiescentTime={this.state.replayAnimationDuration * 0.2} animatingTime={this.state.replayAnimationDuration * 0.8}
                     stroke="silver" strokeWidth="2"
                     stop={this.handleAnimationStop} />
@@ -967,19 +1001,24 @@ class App extends React.Component {
 
     renderPoints() {
         return this.state.points.map((point, pointIndex) => <React.Fragment key={pointIndex}>
-            <circle cx={point.x} cy={this.props.height - point.y} r="3" fill="red" />
-            {this.state.showPointLabel && <text x={point.x} y={this.props.height - point.y} stroke="brown">{pointIndex}</text>}
+            <circle cx={point.x * this.props.width} cy={point.y * this.props.height} r="3" fill="red" />
+            {this.state.showPointLabel && <text x={point.x * this.props.width} y={point.y * this.props.height} stroke="brown">{pointIndex}</text>}
         </React.Fragment>);
     }
 
     render() {
         return <React.Fragment>
             <div>
-                <span>Vertex number: <input type="number" value={this.state.pointNumber} onChange={this.handlePointNumberChange} /> <button onClick={this.handlePointNumberSubmit}>Create triangulation</button></span>
+                <span>Triangulation for <input type="number" value={this.state.pointNumber} onChange={this.handlePointNumberChange} /> vertices&nbsp;&nbsp;</span>
+                <button onClick={this.handleRandomGeneratePoints}>Random generate</button>
                 <span>&nbsp;&nbsp;</span>
-                <span><button onClick={this.handleFineTuneForQuadrilateral} disabled={this.state.replaying}>Fine tune for ⬜</button></span>
+                <button onClick={this.handleImportPoints}>Import</button>
                 <span>&nbsp;&nbsp;</span>
-                <span><button onClick={this.handleFineTuneForPentagon} disabled={this.state.replaying}>Fine tune for ⭔</button></span>
+                <button onClick={this.handleExportPoints}>Export</button>
+                <span>&nbsp;&nbsp;</span>
+                <span><button onClick={this.handleFineTuneForQuadrilateral} disabled={this.state.replaying}>Fine tune for quadrilaterals</button></span>
+                <span>&nbsp;&nbsp;</span>
+                <span><button onClick={this.handleFineTuneForPentagon} disabled={this.state.replaying}>Fine tune for pentagons</button></span>
                 <span>&nbsp;&nbsp;</span>
                 <span><button onClick={this.handleShuffle} disabled={this.state.replaying}>Shuffle</button></span>
             </div>
@@ -1003,9 +1042,9 @@ class App extends React.Component {
                 <div>
                     <div className="legend">
                         <b>Parameters:</b>
-                        <p>Vertex number: {this.state.pointNumber}</p>
+                        <p>Vertex number: {this.state.points.length}</p>
                         <p>Edge number: {this.state.boundingLineList.length + this.state.internalLineList.size}</p>
-                        <p>Edge total length: {this.state.internalLineTotalLength.toFixed(2)}</p>
+                        <p>Edge total length: {this.state.internalLineTotalLength.toFixed(4)}</p>
                         <p>Triangle number: {(this.state.boundingLineList.length + this.state.internalLineList.size * 2) / 3}</p>
                     </div>
                     <div className="legend">
@@ -1029,7 +1068,7 @@ class App extends React.Component {
                                     <td>{this.state.activeRecordIndex === index ?
                                         <span>{index.toString().padStart(5, '0')}</span> :
                                         <a href="#" onClick={this.handleRecordShow} data-tag={index}>{index.toString().padStart(5, '0')}</a>}</td>
-                                    <td>{item.internalLineTotalLength.toFixed(2)}</td>
+                                    <td>{item.internalLineTotalLength.toFixed(4)}</td>
                                     <td>{this.state.activeRecordIndex !== index && <button onClick={this.handleRecordDelete} data-tag={index}>X</button>}</td>
                                 </tr>)}
                             </tbody>
@@ -1041,4 +1080,4 @@ class App extends React.Component {
     }
 }
 
-ReactDOM.render(<App width={800} height={800} />, document.querySelector('#root'));
+ReactDOM.render(<App width={960} height={960} />, document.querySelector('#root'));
